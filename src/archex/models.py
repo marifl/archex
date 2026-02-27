@@ -91,6 +91,13 @@ class RepoMetadata(BaseModel):
     total_lines: int = 0
 
 
+class DiscoveredFile(BaseModel):
+    path: str
+    absolute_path: str
+    language: str
+    size_bytes: int = 0
+
+
 class Parameter(BaseModel):
     name: str
     type_annotation: str | None = None
@@ -251,18 +258,53 @@ class ArchProfile(BaseModel):
 
     def to_dict(self) -> dict[str, Any]:
         """Return the profile as a plain dict."""
-        # TODO: Implement in Phase 3
-        raise NotImplementedError
-
-    def to_markdown(self) -> str:
-        """Render the profile as a Markdown document."""
-        # TODO: Implement in Phase 3
-        raise NotImplementedError
+        return self.model_dump()
 
     def to_json(self) -> str:
         """Serialize the profile to a JSON string."""
-        # TODO: Implement in Phase 3
-        raise NotImplementedError
+        return self.model_dump_json(indent=2)
+
+    def to_markdown(self) -> str:
+        """Render the profile as a Markdown document."""
+        lines: list[str] = []
+        repo = self.repo
+        name = repo.url or repo.local_path or "unknown"
+        lines.append(f"# Architecture Profile: {name}")
+        lines.append("")
+
+        if repo.commit_hash:
+            lines.append(f"**Commit:** `{repo.commit_hash}`")
+            lines.append("")
+
+        lines.append("## Stats")
+        lines.append("")
+        lines.append("| Metric | Value |")
+        lines.append("|--------|-------|")
+        lines.append(f"| Files | {self.stats.total_files} |")
+        lines.append(f"| Lines | {self.stats.total_lines} |")
+        lines.append(f"| Symbols | {self.stats.symbol_count} |")
+        lines.append(f"| Modules | {self.stats.module_count} |")
+        lines.append(f"| Internal edges | {self.stats.internal_edge_count} |")
+        lines.append(f"| External deps | {self.stats.external_dep_count} |")
+        lines.append("")
+
+        if self.stats.languages:
+            lines.append("## Languages")
+            lines.append("")
+            lines.append("| Language | Files | Lines | % |")
+            lines.append("|----------|-------|-------|---|")
+            for lang, ls in sorted(self.stats.languages.items()):
+                lines.append(f"| {lang} | {ls.files} | {ls.lines} | {ls.percentage:.1f} |")
+            lines.append("")
+
+        if self.interface_surface:
+            lines.append("## Interface Surface")
+            lines.append("")
+            for iface in self.interface_surface:
+                lines.append(f"- `{iface.signature}` ({iface.symbol.file_path})")
+            lines.append("")
+
+        return "\n".join(lines)
 
 
 # ---------------------------------------------------------------------------
