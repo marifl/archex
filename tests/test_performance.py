@@ -10,7 +10,10 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from archex.models import DiscoveredFile
+from archex.cache import CacheManager
+from archex.index.graph import DependencyGraph
+from archex.index.store import IndexStore
+from archex.models import CodeChunk, Config, DiscoveredFile, Edge, EdgeKind, RepoSource, SymbolKind
 from archex.parse.adapters import ADAPTERS
 from archex.parse.engine import TreeSitterEngine
 from archex.parse.imports import parse_imports
@@ -246,3 +249,154 @@ class TestNomicEmbedderCaching:
             assert len(vec) == 768
         # With batch_size=4 and 10 texts, expect 3 session.run calls
         assert mock_session.run.call_count == 3
+
+
+# ---------------------------------------------------------------------------
+# Phase 6b: Additional performance optimization tests
+# ---------------------------------------------------------------------------
+
+
+class TestBatchFetch:
+    def test_get_chunks_by_ids_returns_matching(self, tmp_path: Path) -> None:
+        db_path = tmp_path / "test.db"
+        store = IndexStore(db_path)
+        chunks = [
+            CodeChunk(
+                id=f"file.py:sym{i}:{i}",
+                content=f"content {i}",
+                file_path="file.py",
+                start_line=i,
+                end_line=i,
+                language="python",
+            )
+            for i in range(5)
+        ]
+        store.insert_chunks(chunks)
+        result = store.get_chunks_by_ids(["file.py:sym1:1", "file.py:sym3:3"])
+        assert len(result) == 2
+        assert {c.id for c in result} == {"file.py:sym1:1", "file.py:sym3:3"}
+        store.close()
+
+    def test_get_chunks_by_ids_empty(self, tmp_path: Path) -> None:
+        store = IndexStore(tmp_path / "test.db")
+        assert store.get_chunks_by_ids([]) == []
+        store.close()
+
+
+class TestCentralityCache:
+    def test_cached_on_repeated_call(self) -> None:
+        g = DependencyGraph()
+        g.add_file_node("a.py")
+        g.add_file_node("b.py")
+        g.add_file_edge("a.py", "b.py")
+        c1 = g.structural_centrality()
+        c2 = g.structural_centrality()
+        assert c1 is c2
+
+    def test_invalidated_on_mutation(self) -> None:
+        g = DependencyGraph()
+        g.add_file_node("a.py")
+        g.add_file_node("b.py")
+        g.add_file_edge("a.py", "b.py")
+        c1 = g.structural_centrality()
+        g.add_file_node("c.py")
+        g.add_file_edge("b.py", "c.py")
+        c2 = g.structural_centrality()
+        assert c1 is not c2
+        assert "c.py" in c2
+
+
+class TestFromEdges:
+    def test_reconstructs_graph(self) -> None:
+        edges = [
+            Edge(source="a.py", target="b.py", kind=EdgeKind.IMPORTS, location="a.py:1"),
+            Edge(source="b.py", target="c.py", kind=EdgeKind.IMPORTS),
+        ]
+        g = DependencyGraph.from_edges(edges)
+        assert g.file_count == 3
+        assert g.file_edge_count == 2
+
+
+class TestCacheKeyFingerprint:
+    def test_changes_with_git_head(self, tmp_path: Path) -> None:
+        cache = CacheManager(cache_dir=str(tmp_path))
+        source = RepoSource(local_path="/some/repo")
+        with patch.object(CacheManager, "_git_head", return_value="abc"):
+            k1 = cache.cache_key(source)
+        with patch.object(CacheManager, "_git_head", return_value="def"):
+            k2 = cache.cache_key(source)
+        assert k1 != k2
+
+    def test_stable_without_git(self, tmp_path: Path) -> None:
+        cache = CacheManager(cache_dir=str(tmp_path))
+        source = RepoSource(local_path="/r")
+        with patch.object(CacheManager, "_git_head", return_value=None):
+            k1 = cache.cache_key(source)
+            k2 = cache.cache_key(source)
+        assert k1 == k2
+
+
+class TestVectorPath:
+    def test_returns_npz_path(self, tmp_path: Path) -> None:
+        import hashlib
+
+        cache = CacheManager(cache_dir=str(tmp_path))
+        key = hashlib.sha256(b"x").hexdigest()
+        vp = cache.vector_path(key)
+        assert vp.name == f"{key}.vectors.npz"
+
+
+class TestQueryCacheSkipsParse:
+    def test_parse_not_called_on_cache_hit(self, tmp_path: Path) -> None:
+        from archex.index.bm25 import BM25Index
+
+        db_path = tmp_path / "idx.db"
+        store = IndexStore(db_path)
+        chunk = CodeChunk(
+            id="t.py:f:1",
+            content="def f(): pass",
+            file_path="t.py",
+            start_line=1,
+            end_line=1,
+            language="python",
+            symbol_name="f",
+            symbol_kind=SymbolKind.FUNCTION,
+        )
+        store.insert_chunks([chunk])
+        store.insert_edges([Edge(source="t.py", target="u.py", kind=EdgeKind.IMPORTS)])
+        bm25 = BM25Index(store)
+        bm25.build([chunk])
+        store.conn.execute("PRAGMA wal_checkpoint(FULL)")
+        store.close()
+
+        cache_dir = tmp_path / "cache"
+        cache_dir.mkdir()
+        cache = CacheManager(cache_dir=str(cache_dir))
+        source = RepoSource(local_path="/fake")
+        key = cache.cache_key(source)
+        cache.put(key, db_path)
+
+        config = Config(cache=True, cache_dir=str(cache_dir))
+        with (
+            patch("archex.api.extract_symbols") as mock_es,
+            patch("archex.cache.CacheManager._git_head", return_value=None),
+        ):
+            from archex.api import query
+
+            query(source, "what?", config=config)
+        mock_es.assert_not_called()
+
+
+class TestCompareParallel:
+    def test_both_analyses_called(self) -> None:
+        from archex.models import ArchProfile, CodebaseStats, RepoMetadata
+
+        mock_profile = ArchProfile(
+            repo=RepoMetadata(local_path="/a"),
+            stats=CodebaseStats(),
+        )
+        with patch("archex.api.analyze", return_value=mock_profile) as mock_a:
+            from archex.api import compare
+
+            compare(RepoSource(local_path="/a"), RepoSource(local_path="/b"))
+        assert mock_a.call_count == 2

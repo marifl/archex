@@ -60,9 +60,8 @@ def _split_lines_at_boundary(
     return chunks
 
 
-def _extract_source_lines(source: bytes, start_line: int, end_line: int) -> list[bytes]:
-    """Extract 1-indexed [start_line, end_line] from source bytes."""
-    all_lines = source.split(b"\n")
+def _extract_source_lines(all_lines: list[bytes], start_line: int, end_line: int) -> list[bytes]:
+    """Extract 1-indexed [start_line, end_line] from pre-split line list."""
     lo = max(0, start_line - 1)
     hi = min(len(all_lines), end_line)
     return all_lines[lo:hi]
@@ -136,7 +135,7 @@ class ASTChunker:
         candidates: list[tuple[list[bytes], int, Symbol | None]] = []
 
         for sym in symbols:
-            sym_lines = _extract_source_lines(source, sym.start_line, sym.end_line)
+            sym_lines = _extract_source_lines(all_source_lines, sym.start_line, sym.end_line)
             if not sym_lines:
                 continue
 
@@ -154,7 +153,7 @@ class ASTChunker:
         # File-level code: lines not covered by any symbol
         uncovered_ranges = _find_uncovered_ranges(covered, total_lines)
         for range_start, range_end in uncovered_ranges:
-            fl_lines = _extract_source_lines(source, range_start, range_end)
+            fl_lines = _extract_source_lines(all_source_lines, range_start, range_end)
             if not fl_lines or all(line.strip() == b"" for line in fl_lines):
                 continue
             tokens = _count_tokens(encoder, _lines_to_text(fl_lines))

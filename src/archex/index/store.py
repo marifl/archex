@@ -152,6 +152,19 @@ class IndexStore:
         row = cur.fetchone()
         return _row_to_chunk(row) if row else None
 
+    def get_chunks_by_ids(self, ids: list[str]) -> list[CodeChunk]:
+        """Fetch multiple chunks by ID in a single query."""
+        if not ids:
+            return []
+        placeholders = ",".join("?" for _ in ids)
+        sql = (
+            "SELECT id, content, file_path, start_line, end_line, symbol_name, "
+            "symbol_kind, language, imports_context, token_count, module "
+            f"FROM chunks WHERE id IN ({placeholders})"
+        )
+        cur = self._conn.execute(sql, ids)
+        return [_row_to_chunk(row) for row in cur.fetchall()]
+
     def get_chunks_for_file(self, file_path: str) -> list[CodeChunk]:
         cur = self._conn.execute(
             "SELECT id, content, file_path, start_line, end_line, symbol_name, symbol_kind, "

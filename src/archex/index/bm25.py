@@ -70,13 +70,20 @@ class BM25Index:
         except Exception:
             return []
 
+        rows = cur.fetchall()
+        if not rows:
+            return []
+
+        # Batch-fetch all chunks in one query instead of N individual lookups
+        chunk_ids = [str(row[0]) for row in rows]
+        score_map = {str(row[0]): -float(row[1]) for row in rows}
+        fetched = self._store.get_chunks_by_ids(chunk_ids)
+
         results: list[tuple[CodeChunk, float]] = []
-        for chunk_id, raw_score in cur.fetchall():
-            chunk = self._store.get_chunk(str(chunk_id))
-            if chunk is None:
-                continue
-            # FTS5 bm25() returns negative values; negate for positive relevance score
-            score = -float(raw_score)
+        for chunk in fetched:
+            score = score_map.get(chunk.id, 0.0)
             results.append((chunk, score))
 
+        # Preserve BM25 ranking order
+        results.sort(key=lambda r: r[1], reverse=True)
         return results
