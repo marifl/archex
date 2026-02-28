@@ -33,21 +33,37 @@ def assemble_context(
     all_chunks: list[CodeChunk],
     question: str,
     token_budget: int = 8192,
+    vector_results: list[tuple[CodeChunk, float]] | None = None,
 ) -> ContextBundle:
-    """Assemble a token-budgeted ContextBundle from BM25 results and a dependency graph."""
+    """Assemble a token-budgeted ContextBundle from search results and a dependency graph.
+
+    When vector_results is provided, uses Reciprocal Rank Fusion to merge BM25 and
+    vector results before scoring.
+    """
     assembly_start = time.perf_counter()
 
-    if not search_results:
+    strategy = "hybrid+graph" if vector_results else "bm25+graph"
+
+    if not search_results and not vector_results:
         return ContextBundle(
             query=question,
             token_budget=token_budget,
-            retrieval_metadata=RetrievalMetadata(strategy="bm25+graph"),
+            retrieval_metadata=RetrievalMetadata(strategy=strategy),
         )
 
-    # Normalize BM25 scores to [0, 1]
-    max_score = max(score for _, score in search_results) or 1.0
-    bm25_by_id: dict[str, float] = {chunk.id: score / max_score for chunk, score in search_results}
-    seed_files: set[str] = {chunk.file_path for chunk, _ in search_results}
+    # Merge BM25 + vector via RRF when both are available
+    if vector_results:
+        from archex.index.vector import reciprocal_rank_fusion
+
+        merged = reciprocal_rank_fusion(search_results, vector_results, k=60)
+        max_score = max(score for _, score in merged) or 1.0
+        bm25_by_id: dict[str, float] = {chunk.id: score / max_score for chunk, score in merged}
+    else:
+        # Normalize BM25 scores to [0, 1]
+        max_score = max(score for _, score in search_results) or 1.0
+        bm25_by_id = {chunk.id: score / max_score for chunk, score in search_results}
+    all_results = search_results + (vector_results or [])
+    seed_files: set[str] = {chunk.file_path for chunk, _ in all_results}
 
     candidates_found = len(search_results)
 
@@ -145,7 +161,7 @@ def assemble_context(
         candidates_after_expansion=candidates_after_expansion,
         chunks_included=len(included),
         chunks_dropped=chunks_dropped,
-        strategy="bm25+graph",
+        strategy=strategy,
         assembly_time_ms=assembly_ms,
     )
 
