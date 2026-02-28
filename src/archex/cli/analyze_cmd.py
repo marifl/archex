@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import time
+
 import click
 
 from archex.api import analyze
@@ -25,7 +27,8 @@ from archex.models import Config, RepoSource
     multiple=True,
     help="Filter by language (may be repeated).",
 )
-def analyze_cmd(source: str, output_format: str, languages: tuple[str, ...]) -> None:
+@click.option("--timing", is_flag=True, default=False, help="Print timing breakdown.")
+def analyze_cmd(source: str, output_format: str, languages: tuple[str, ...], timing: bool) -> None:
     """Analyze a repository and produce an architecture profile."""
     if source.startswith("http://") or source.startswith("https://"):
         source_obj = RepoSource(url=source)
@@ -35,9 +38,14 @@ def analyze_cmd(source: str, output_format: str, languages: tuple[str, ...]) -> 
     lang_list: list[str] | None = list(languages) if languages else None
     config = Config(languages=lang_list)
 
+    t0 = time.perf_counter()
     profile = analyze(source_obj, config)
+    elapsed_ms = (time.perf_counter() - t0) * 1000
 
     if output_format == "json":
         click.echo(profile.to_json())
     else:
         click.echo(profile.to_markdown())
+
+    if timing:
+        click.echo(f"\n--- Timing: {elapsed_ms:.0f}ms total ---", err=True)

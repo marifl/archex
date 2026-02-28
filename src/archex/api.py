@@ -25,9 +25,12 @@ from archex.parse import (
     parse_imports,
     resolve_imports,
 )
+from archex.parse.adapters.go import GoAdapter
 from archex.parse.adapters.python import PythonAdapter
+from archex.parse.adapters.rust import RustAdapter
 from archex.parse.adapters.typescript import TypeScriptAdapter
 from archex.providers.base import get_provider
+from archex.serve.compare import compare_repos
 from archex.serve.context import assemble_context
 from archex.serve.profile import build_profile
 
@@ -50,6 +53,8 @@ def _build_adapters() -> dict[str, LanguageAdapter]:
     return {
         "python": PythonAdapter(),
         "typescript": TypeScriptAdapter(),
+        "go": GoAdapter(),
+        "rust": RustAdapter(),
     }
 
 
@@ -198,8 +203,10 @@ def query(
 def compare(
     source_a: RepoSource,
     source_b: RepoSource,
+    dimensions: list[str] | None = None,
     config: Config | None = None,
 ) -> ComparisonResult:
     """Analyze two repositories and return a ComparisonResult."""
-    # TODO: Implement in Phase 4
-    raise NotImplementedError
+    profile_a = analyze(source_a, config)
+    profile_b = analyze(source_b, config)
+    return compare_repos(profile_a, profile_b, dimensions)
