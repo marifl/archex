@@ -67,6 +67,7 @@ class Config(BaseModel):
     cache: bool = True
     cache_dir: str = "~/.archex/cache"
     max_file_size: int = 10_000_000
+    parallel: bool = False
 
 
 class IndexConfig(BaseModel):

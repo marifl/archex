@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import re
 import shutil
+import subprocess
 import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -29,9 +30,35 @@ class CacheManager:
     # ------------------------------------------------------------------
 
     def cache_key(self, source: RepoSource) -> str:
-        """Derive a stable SHA256 cache key from the source URL or local path."""
+        """Derive a stable SHA256 cache key from the source identity and git HEAD."""
         identity = source.url or source.local_path or ""
+        # Include git HEAD commit for local repos to invalidate on new commits
+        commit = source.commit or self._git_head(source.local_path)
+        if commit:
+            identity = f"{identity}@{commit}"
         return hashlib.sha256(identity.encode()).hexdigest()
+
+    @staticmethod
+    def _git_head(local_path: str | None) -> str | None:
+        """Return the HEAD commit hash for a local repo, or None."""
+        if local_path is None:
+            return None
+        git_dir = Path(local_path) / ".git"
+        if not git_dir.exists():
+            return None
+        try:
+            result = subprocess.run(
+                ["git", "rev-parse", "HEAD"],
+                cwd=local_path,
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            if result.returncode == 0:
+                return result.stdout.strip()
+        except (subprocess.TimeoutExpired, OSError):
+            pass
+        return None
 
     def _validate_key(self, key: str) -> None:
         if not _KEY_RE.match(key):
@@ -48,6 +75,11 @@ class CacheManager:
         """Return the metadata file path for a cache key."""
         self._validate_key(key)
         return self._cache_dir / f"{key}.meta"
+
+    def vector_path(self, key: str) -> Path:
+        """Return the vector index file path for a cache key."""
+        self._validate_key(key)
+        return self._cache_dir / f"{key}.vectors.npz"
 
     # ------------------------------------------------------------------
     # CRUD

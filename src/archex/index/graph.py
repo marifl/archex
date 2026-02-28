@@ -19,6 +19,7 @@ class DependencyGraph:
     def __init__(self) -> None:
         self._file_graph: nx.DiGraph[str] = nx.DiGraph()  # type: ignore[type-arg]
         self._symbol_graph: nx.DiGraph[str] = nx.DiGraph()  # type: ignore[type-arg]
+        self._centrality_cache: dict[str, float] | None = None
 
     # ------------------------------------------------------------------
     # Construction
@@ -57,6 +58,21 @@ class DependencyGraph:
 
         return graph
 
+    @classmethod
+    def from_edges(cls, edges: list[Edge]) -> DependencyGraph:
+        """Reconstruct a file-level DependencyGraph from Edge objects."""
+        graph = cls()
+        for edge in edges:
+            graph._file_graph.add_node(edge.source)  # type: ignore[misc]
+            graph._file_graph.add_node(edge.target)  # type: ignore[misc]
+            graph._file_graph.add_edge(  # type: ignore[misc]
+                edge.source,
+                edge.target,
+                kind=edge.kind,
+                location=edge.location,
+            )
+        return graph
+
     # ------------------------------------------------------------------
     # Properties
     # ------------------------------------------------------------------
@@ -64,10 +80,12 @@ class DependencyGraph:
     def add_file_node(self, path: str) -> None:
         """Add a file node to the file-level graph."""
         self._file_graph.add_node(path)  # type: ignore[misc]
+        self._centrality_cache = None
 
     def add_file_edge(self, source: str, target: str, kind: str = "imports") -> None:
         """Add an edge to the file-level graph."""
         self._file_graph.add_edge(source, target, kind=kind)  # type: ignore[misc]
+        self._centrality_cache = None
 
     @property
     def file_count(self) -> int:
@@ -129,11 +147,14 @@ class DependencyGraph:
         return visited
 
     def structural_centrality(self) -> dict[str, float]:
-        """Return PageRank centrality scores for all file nodes."""
+        """Return PageRank centrality scores for all file nodes (lazily cached)."""
+        if self._centrality_cache is not None:
+            return self._centrality_cache
         if self._file_graph.number_of_nodes() == 0:  # type: ignore[misc]
             return {}
         raw: dict[Any, float] = nx.pagerank(self._file_graph)  # type: ignore[misc]
-        return {str(k): v for k, v in raw.items()}
+        self._centrality_cache = {str(k): v for k, v in raw.items()}
+        return self._centrality_cache
 
     # ------------------------------------------------------------------
     # Persistence

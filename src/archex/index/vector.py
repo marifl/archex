@@ -65,7 +65,12 @@ class VectorIndex:
         # Dot product on normalized vectors = cosine similarity
         similarities = self._vectors @ query_vec
         k = min(top_k, len(self._chunk_ids))
-        top_indices = np.argsort(similarities)[::-1][:k]
+        # O(N) argpartition for top-k selection, then sort only the k selected
+        if k < len(similarities):
+            part_indices = np.argpartition(similarities, -k)[-k:]
+            top_indices = part_indices[np.argsort(similarities[part_indices])[::-1]]
+        else:
+            top_indices = np.argsort(similarities)[::-1]
 
         results: list[tuple[CodeChunk, float]] = []
         for idx in top_indices:
