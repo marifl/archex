@@ -7,19 +7,13 @@ import logging
 from typing import Any
 
 from archex.api import analyze, compare, query
-from archex.models import RepoSource
 from archex.serve.compare import SUPPORTED_DIMENSIONS
+from archex.utils import resolve_source
 
 logger = logging.getLogger(__name__)
 
 _SUPPORTED_FORMATS = {"json", "markdown"}
 _DEFAULT_DIMENSIONS = ["api_surface", "error_handling"]
-
-
-def _resolve_source(path_or_url: str) -> RepoSource:
-    if path_or_url.startswith("http://") or path_or_url.startswith("https://"):
-        return RepoSource(url=path_or_url)
-    return RepoSource(local_path=path_or_url)
 
 
 def handle_analyze_repo(repo_url: str, output_format: str = "json") -> str:
@@ -37,7 +31,7 @@ def handle_analyze_repo(repo_url: str, output_format: str = "json") -> str:
             f"format must be one of {sorted(_SUPPORTED_FORMATS)}, got {output_format!r}"
         )
 
-    source = _resolve_source(repo_url)
+    source = resolve_source(repo_url)
     profile = analyze(source)
     if output_format == "markdown":
         return profile.to_markdown()
@@ -60,7 +54,7 @@ def handle_query_repo(repo_url: str, question: str, budget: int = 8000) -> str:
     if budget <= 0:
         raise ValueError(f"budget must be positive, got {budget}")
 
-    source = _resolve_source(repo_url)
+    source = resolve_source(repo_url)
     bundle = query(source, question, token_budget=budget)
     return bundle.to_prompt(format="xml")
 
@@ -94,8 +88,8 @@ def handle_compare_repos(
             f"Supported: {', '.join(sorted(SUPPORTED_DIMENSIONS))}"
         )
 
-    source_a = _resolve_source(repo_a)
-    source_b = _resolve_source(repo_b)
+    source_a = resolve_source(repo_a)
+    source_b = resolve_source(repo_b)
     result = compare(source_a, source_b, dimensions=dim_list)
     return result.model_dump_json(indent=2)
 
@@ -180,8 +174,8 @@ def build_server() -> Any:
                 name="compare_repos",
                 description=(
                     "Compare two code repositories across architectural dimensions such as "
-                    "API surface, error handling, concurrency model, testing strategy, "
-                    "dependency management, and configuration management."
+                    "API surface, error handling, concurrency model, testing, "
+                    "state management, and configuration."
                 ),
                 inputSchema={
                     "type": "object",
@@ -200,8 +194,7 @@ def build_server() -> Any:
                             "description": (
                                 "Comma-separated dimensions to compare. "
                                 "Supported: api_surface, error_handling, concurrency, "
-                                "testing_strategy, dependency_management, "
-                                "configuration_management."
+                                "testing, state_management, configuration."
                             ),
                         },
                     },

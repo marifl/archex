@@ -8,7 +8,8 @@ import click
 
 from archex.api import analyze
 from archex.exceptions import ArchexError
-from archex.models import Config, RepoSource
+from archex.models import Config
+from archex.utils import resolve_source
 
 
 @click.command("analyze")
@@ -31,10 +32,7 @@ from archex.models import Config, RepoSource
 @click.option("--timing", is_flag=True, default=False, help="Print timing breakdown.")
 def analyze_cmd(source: str, output_format: str, languages: tuple[str, ...], timing: bool) -> None:
     """Analyze a repository and produce an architecture profile."""
-    if source.startswith("http://") or source.startswith("https://"):
-        source_obj = RepoSource(url=source)
-    else:
-        source_obj = RepoSource(local_path=source)
+    source_obj = resolve_source(source)
 
     lang_list: list[str] | None = list(languages) if languages else None
     config = Config(languages=lang_list)

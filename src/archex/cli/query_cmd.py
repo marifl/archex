@@ -8,7 +8,7 @@ import click
 
 from archex.api import query
 from archex.exceptions import ArchexError
-from archex.models import RepoSource
+from archex.utils import resolve_source
 
 
 @click.command("query")
@@ -43,10 +43,7 @@ def query_cmd(
     """Query a repository and return a context bundle."""
     from archex.models import Config, IndexConfig
 
-    repo_source = RepoSource(
-        url=source if source.startswith("http") else None,
-        local_path=source if not source.startswith("http") else None,
-    )
+    repo_source = resolve_source(source)
     config = Config(languages=list(language) if language else None)
     index_config = IndexConfig(vector=(strategy == "hybrid"))
 
