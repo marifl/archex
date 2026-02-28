@@ -4,16 +4,11 @@ from __future__ import annotations
 
 import click
 
-from archex.api import analyze
+from archex.api import compare
 from archex.exceptions import ArchexError
-from archex.models import Config, RepoSource
-from archex.serve.compare import SUPPORTED_DIMENSIONS, compare_repos
-
-
-def _resolve_source(path: str) -> RepoSource:
-    if path.startswith("http://") or path.startswith("https://"):
-        return RepoSource(url=path)
-    return RepoSource(local_path=path)
+from archex.models import Config
+from archex.serve.compare import SUPPORTED_DIMENSIONS
+from archex.utils import resolve_source
 
 
 def render_comparison_markdown(result: object) -> str:
@@ -115,13 +110,11 @@ def compare_cmd(
     lang_list: list[str] | None = list(languages) if languages else None
     config = Config(languages=lang_list)
 
-    source_a_obj = _resolve_source(source_a)
-    source_b_obj = _resolve_source(source_b)
+    source_a_obj = resolve_source(source_a)
+    source_b_obj = resolve_source(source_b)
 
     try:
-        profile_a = analyze(source_a_obj, config)
-        profile_b = analyze(source_b_obj, config)
-        result = compare_repos(profile_a, profile_b, dims)
+        result = compare(source_a_obj, source_b_obj, dimensions=dims, config=config)
     except ArchexError as exc:
         raise click.ClickException(str(exc)) from exc
 
