@@ -20,7 +20,7 @@ archex is a Python library and CLI that transforms any Git repository into struc
 ## Installation
 
 ```bash
-pip install archex
+uv add archex
 ```
 
 ### Extras
