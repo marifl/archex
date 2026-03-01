@@ -156,9 +156,7 @@ def test_evidence_symbols_non_empty() -> None:
 def test_pattern_registry_add() -> None:
     registry = PatternRegistry()
 
-    def my_detector(
-        parsed_files: list[ParsedFile], graph: DependencyGraph
-    ) -> None:
+    def my_detector(parsed_files: list[ParsedFile], graph: DependencyGraph) -> None:
         return None
 
     assert registry.detectors == []
@@ -169,9 +167,7 @@ def test_pattern_registry_add() -> None:
 def test_pattern_registry_load_entry_points_success() -> None:
     registry = PatternRegistry()
 
-    def fake_detector(
-        parsed_files: list[ParsedFile], graph: DependencyGraph
-    ) -> None:
+    def fake_detector(parsed_files: list[ParsedFile], graph: DependencyGraph) -> None:
         return None
 
     ep = MagicMock()

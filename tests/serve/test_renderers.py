@@ -80,8 +80,11 @@ def _base_bundle(**overrides: object) -> ContextBundle:
 
 def test_markdown_type_definitions_section_rendered() -> None:
     td = _type_def(
-        symbol="Config", file_path="src/config.py",
-        content="class Config: ...", start_line=5, end_line=10,
+        symbol="Config",
+        file_path="src/config.py",
+        content="class Config: ...",
+        start_line=5,
+        end_line=10,
     )
     bundle = _base_bundle(type_definitions=[td])
     md = render_markdown(bundle)
@@ -149,8 +152,11 @@ def test_xml_imports_context_cdata_rendered() -> None:
 
 def test_xml_type_definitions_block_rendered() -> None:
     td = _type_def(
-        symbol="Request", file_path="src/http.py",
-        content="class Request: ...", start_line=2, end_line=8,
+        symbol="Request",
+        file_path="src/http.py",
+        content="class Request: ...",
+        start_line=2,
+        end_line=8,
     )
     bundle = _base_bundle(type_definitions=[td])
     xml = render_xml(bundle)

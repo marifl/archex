@@ -431,6 +431,7 @@ def test_symbol_kind_set_on_chunk() -> None:
 # Private helper tests
 # ---------------------------------------------------------------------------
 
+
 def test_format_import_with_alias() -> None:
     imp = ImportStatement(module="numpy", alias="np", file_path="x.py", line=1)
     assert _format_import(imp) == "import numpy as np"

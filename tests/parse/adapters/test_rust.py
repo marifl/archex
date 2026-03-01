@@ -417,14 +417,14 @@ def test_classify_visibility_internal(adapter: RustAdapter) -> None:
 
 def test_trait_default_method(engine: TreeSitterEngine, adapter: RustAdapter) -> None:
     """Trait with a default method implementation (function_item in trait body)."""
-    source = b'''
+    source = b"""
 pub trait Handler {
     fn handle(&self) -> bool;
     fn default_impl(&self) -> String {
         String::from("default")
     }
 }
-'''
+"""
     tree = parse(engine, source)
     symbols = adapter.extract_symbols(tree, source, "handler.rs")
     method_names = [s.name for s in symbols if s.kind == SymbolKind.METHOD]
@@ -437,7 +437,7 @@ pub trait Handler {
 
 def test_use_as_clause(engine: TreeSitterEngine, adapter: RustAdapter) -> None:
     """use_as_clause: `use std::collections::HashMap as Map;`"""
-    source = b'use std::collections::HashMap as Map;\nfn main() {}\n'
+    source = b"use std::collections::HashMap as Map;\nfn main() {}\n"
     tree = parse(engine, source)
     imports = adapter.parse_imports(tree, source, "test.rs")
     aliased = [i for i in imports if i.alias is not None]
@@ -447,7 +447,7 @@ def test_use_as_clause(engine: TreeSitterEngine, adapter: RustAdapter) -> None:
 
 def test_use_wildcard(engine: TreeSitterEngine, adapter: RustAdapter) -> None:
     """use_wildcard: `use std::io::*;`"""
-    source = b'use std::io::*;\nfn main() {}\n'
+    source = b"use std::io::*;\nfn main() {}\n"
     tree = parse(engine, source)
     imports = adapter.parse_imports(tree, source, "test.rs")
     wildcard = [i for i in imports if "*" in i.symbols]
@@ -456,7 +456,7 @@ def test_use_wildcard(engine: TreeSitterEngine, adapter: RustAdapter) -> None:
 
 def test_use_self_in_list(engine: TreeSitterEngine, adapter: RustAdapter) -> None:
     """self in use list: `use std::io::{self, Read};`"""
-    source = b'use std::io::{self, Read};\nfn main() {}\n'
+    source = b"use std::io::{self, Read};\nfn main() {}\n"
     tree = parse(engine, source)
     imports = adapter.parse_imports(tree, source, "test.rs")
     # Should have an import with "self" in symbols or "Read" in symbols
@@ -537,7 +537,7 @@ def test_detect_entry_points_oserror(adapter: RustAdapter, tmp_path: Path) -> No
 
 def test_nested_scoped_use_with_alias(engine: TreeSitterEngine, adapter: RustAdapter) -> None:
     """Nested scoped use list with as clause inside."""
-    source = b'use std::collections::{HashMap, BTreeMap as BT};\nfn main() {}\n'
+    source = b"use std::collections::{HashMap, BTreeMap as BT};\nfn main() {}\n"
     tree = parse(engine, source)
     imports = adapter.parse_imports(tree, source, "test.rs")
     # Should have HashMap and BTreeMap symbols
@@ -549,7 +549,7 @@ def test_nested_scoped_use_with_alias(engine: TreeSitterEngine, adapter: RustAda
 
 def test_use_bare_identifier(engine: TreeSitterEngine, adapter: RustAdapter) -> None:
     """Bare identifier use: `use serde;`"""
-    source = b'use serde;\nfn main() {}\n'
+    source = b"use serde;\nfn main() {}\n"
     tree = parse(engine, source)
     imports = adapter.parse_imports(tree, source, "test.rs")
     assert len(imports) >= 1

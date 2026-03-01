@@ -1,4 +1,5 @@
 """Tests for archex.config — load_config and _parse_env_value."""
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
@@ -64,7 +65,8 @@ def test_load_config_toml_valid_keys(tmp_path: Path, monkeypatch: pytest.MonkeyP
 
 
 def test_load_config_toml_ignores_unknown_keys(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     toml_file = tmp_path / "config.toml"
     toml_file.write_text('depth = "shallow"\nunknown_key = "ignored"\n', encoding="utf-8")
@@ -82,7 +84,8 @@ def test_load_config_toml_ignores_unknown_keys(
 
 
 def test_load_config_env_var_prefix_stripping(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
     monkeypatch.setattr(cfg_module, "_CONFIG_FILE", tmp_path / "nonexistent.toml")
     monkeypatch.setenv("ARCHEX_PROVIDER", "anthropic")
@@ -103,7 +106,8 @@ def test_load_config_env_var_size_coercion(monkeypatch: pytest.MonkeyPatch, tmp_
 
 
 def test_load_config_env_var_ignores_unknown_keys(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
     monkeypatch.setattr(cfg_module, "_CONFIG_FILE", tmp_path / "nonexistent.toml")
     monkeypatch.setenv("ARCHEX_TOTALLY_UNKNOWN", "value")
@@ -114,7 +118,8 @@ def test_load_config_env_var_ignores_unknown_keys(
 
 
 def test_load_config_default_when_no_toml_no_env(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
     monkeypatch.setattr(cfg_module, "_CONFIG_FILE", tmp_path / "nonexistent.toml")
     for key in list(k for k in __import__("os").environ if k.startswith("ARCHEX_")):
