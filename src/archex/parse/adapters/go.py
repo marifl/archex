@@ -137,6 +137,9 @@ def _extract_methods(root: object, source: bytes, file_path: str) -> list[Symbol
         receiver_type = _extract_receiver_type(recv_node, source)
         recv_text = _text(recv_node, source).strip("()")
         sig = _get_method_signature(child, source, name, recv_text)
+        # Format: Type.method (not (*Type).method) — pointer vs value receiver
+        # is a Go calling convention, not a structural distinction.
+        # Unambiguous because Go prohibits duplicate method names on a type.
         qualified = f"{receiver_type}.{name}" if receiver_type else name
         symbols.append(
             Symbol(
