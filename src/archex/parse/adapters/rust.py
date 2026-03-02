@@ -70,7 +70,7 @@ def _extract_function(
     name = _text(name_node, source)
     vis = _get_visibility(node)
     kind = SymbolKind.METHOD if parent else SymbolKind.FUNCTION
-    qualified = f"{parent}.{name}" if parent else name
+    qualified = f"impl_{parent}::{name}" if parent else name
 
     # Build signature
     params_node = _field(node, "parameters")
