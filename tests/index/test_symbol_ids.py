@@ -7,10 +7,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from archex.index.chunker import (
-    ASTChunker,
-    _make_symbol_id,  # pyright: ignore[reportPrivateUsage]
-)
+from archex.index.chunker import ASTChunker
 from archex.index.store import IndexStore
 from archex.models import (
     CodeChunk,
@@ -18,6 +15,7 @@ from archex.models import (
     ParsedFile,
     Symbol,
     SymbolKind,
+    make_symbol_id,
 )
 from archex.parse.adapters.rust import RustAdapter
 from archex.parse.engine import TreeSitterEngine
@@ -198,25 +196,25 @@ def test_disambiguation_appends_ordinal() -> None:
 
 
 def test_make_symbol_id_format_function() -> None:
-    assert _make_symbol_id("src/utils.py", "authenticate", SymbolKind.FUNCTION) == (
+    assert make_symbol_id("src/utils.py", "authenticate", SymbolKind.FUNCTION) == (
         "src/utils.py::authenticate#function"
     )
 
 
 def test_make_symbol_id_format_class() -> None:
-    assert _make_symbol_id("src/pool.py", "ConnectionPool", SymbolKind.CLASS) == (
+    assert make_symbol_id("src/pool.py", "ConnectionPool", SymbolKind.CLASS) == (
         "src/pool.py::ConnectionPool#class"
     )
 
 
 def test_make_symbol_id_format_method() -> None:
-    assert _make_symbol_id("src/pool.py", "ConnectionPool.handle", SymbolKind.METHOD) == (
+    assert make_symbol_id("src/pool.py", "ConnectionPool.handle", SymbolKind.METHOD) == (
         "src/pool.py::ConnectionPool.handle#method"
     )
 
 
 def test_make_symbol_id_format_module() -> None:
-    assert _make_symbol_id("src/utils.py", None, None) == "src/utils.py::_module#module"
+    assert make_symbol_id("src/utils.py", None, None) == "src/utils.py::_module#module"
 
 
 def test_python_adapter_qualified_names(engine: TreeSitterEngine) -> None:
@@ -522,3 +520,4 @@ def test_chunker_file_level_chunk_symbol_id() -> None:
     for c in chunks:
         assert c.symbol_id is not None
         assert "::_module#module" in c.symbol_id
+        assert c.visibility == "public"

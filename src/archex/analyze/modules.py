@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Any
 import networkx as nx
 from networkx.algorithms.community import louvain_communities
 
-from archex.models import Module, ParsedFile, SymbolKind, SymbolRef, Visibility
+from archex.models import Module, ParsedFile, SymbolKind, SymbolRef, Visibility, make_symbol_id
 
 if TYPE_CHECKING:
     from archex.index.graph import DependencyGraph
@@ -88,6 +88,7 @@ def _build_module_from_community(
                         qualified_name=sym.qualified_name,
                         file_path=sym.file_path,
                         kind=sym.kind,
+                        symbol_id=make_symbol_id(sym.file_path, sym.qualified_name, sym.kind),
                     )
                 )
 

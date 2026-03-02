@@ -6,7 +6,15 @@ from typing import Protocol, runtime_checkable
 
 import tiktoken
 
-from archex.models import CodeChunk, ImportStatement, IndexConfig, ParsedFile, Symbol, SymbolKind
+from archex.models import (
+    CodeChunk,
+    ImportStatement,
+    IndexConfig,
+    ParsedFile,
+    Symbol,
+    SymbolKind,
+    make_symbol_id,
+)
 
 
 @runtime_checkable
@@ -90,9 +98,7 @@ def _make_symbol_id(
     qualified_name: str | None,
     kind: SymbolKind | None,
 ) -> str:
-    name = qualified_name if qualified_name is not None else "_module"
-    kind_str = str(kind) if kind is not None else "module"
-    return f"{file_path}::{name}#{kind_str}"
+    return make_symbol_id(file_path, qualified_name, kind)
 
 
 def _disambiguate_symbol_ids(chunks: list[CodeChunk]) -> None:
@@ -139,7 +145,7 @@ def _build_chunk(
             symbol.kind if symbol else None,
         ),
         qualified_name=symbol.qualified_name if symbol else None,
-        visibility=str(symbol.visibility) if symbol else None,
+        visibility=str(symbol.visibility) if symbol else "public",
         signature=symbol.signature if symbol else None,
         docstring=symbol.docstring if symbol else None,
         content=content,

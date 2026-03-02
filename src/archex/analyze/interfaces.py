@@ -12,6 +12,7 @@ from archex.models import (
     SymbolKind,
     SymbolRef,
     Visibility,
+    make_symbol_id,
 )
 
 if TYPE_CHECKING:
@@ -167,6 +168,7 @@ def extract_interfaces(
                 qualified_name=sym.qualified_name,
                 file_path=sym.file_path,
                 kind=sym.kind,
+                symbol_id=make_symbol_id(sym.file_path, sym.qualified_name, sym.kind),
             )
 
             signature = sym.signature or sym.name
