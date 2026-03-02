@@ -6,7 +6,7 @@ from typing import Protocol, runtime_checkable
 
 import tiktoken
 
-from archex.models import CodeChunk, ImportStatement, IndexConfig, ParsedFile, Symbol
+from archex.models import CodeChunk, ImportStatement, IndexConfig, ParsedFile, Symbol, SymbolKind
 
 
 @runtime_checkable
@@ -85,6 +85,29 @@ def _make_chunk_id(file_path: str, symbol_name: str | None, start_line: int) -> 
     return f"{file_path}:{name}:{start_line}"
 
 
+def _make_symbol_id(
+    file_path: str,
+    qualified_name: str | None,
+    kind: SymbolKind | None,
+) -> str:
+    name = qualified_name if qualified_name is not None else "_module"
+    kind_str = str(kind) if kind is not None else "module"
+    return f"{file_path}::{name}#{kind_str}"
+
+
+def _disambiguate_symbol_ids(chunks: list[CodeChunk]) -> None:
+    seen: dict[str, list[CodeChunk]] = {}
+    for chunk in chunks:
+        if chunk.symbol_id:
+            seen.setdefault(chunk.symbol_id, []).append(chunk)
+    for sid, group in seen.items():
+        if len(group) > 1:
+            group.sort(key=lambda c: c.start_line)
+            for i, chunk in enumerate(group):
+                if i > 0:
+                    chunk.symbol_id = f"{sid}@{i + 1}"
+
+
 def _lines_to_text(lines: list[bytes]) -> str:
     return "\n".join(line.decode("utf-8", errors="replace") for line in lines)
 
@@ -110,6 +133,15 @@ def _build_chunk(
 
     return CodeChunk(
         id=_make_chunk_id(file_path, symbol.name if symbol else None, start_line),
+        symbol_id=_make_symbol_id(
+            file_path,
+            symbol.qualified_name if symbol else None,
+            symbol.kind if symbol else None,
+        ),
+        qualified_name=symbol.qualified_name if symbol else None,
+        visibility=str(symbol.visibility) if symbol else None,
+        signature=symbol.signature if symbol else None,
+        docstring=symbol.docstring if symbol else None,
         content=content,
         file_path=file_path,
         start_line=start_line,
@@ -198,6 +230,7 @@ class ASTChunker:
             result.append(chunk)
 
         result.sort(key=lambda c: c.start_line)
+        _disambiguate_symbol_ids(result)
         return result
 
     def chunk_files(
