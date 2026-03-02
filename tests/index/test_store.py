@@ -16,6 +16,10 @@ from archex.models import CodeChunk, Edge, EdgeKind, SymbolKind
 SAMPLE_CHUNKS = [
     CodeChunk(
         id="utils.py:calculate_sum:5",
+        symbol_id="utils.py::calculate_sum#function",
+        qualified_name="calculate_sum",
+        visibility="public",
+        signature="def calculate_sum(a: int, b: int) -> int",
         content="def calculate_sum(a: int, b: int) -> int:\n    return a + b",
         file_path="utils.py",
         start_line=5,
@@ -27,6 +31,10 @@ SAMPLE_CHUNKS = [
     ),
     CodeChunk(
         id="auth.py:authenticate:10",
+        symbol_id="auth.py::authenticate#function",
+        qualified_name="authenticate",
+        visibility="public",
+        signature="def authenticate(username: str, password: str) -> bool",
         content=(
             "def authenticate(username: str, password: str) -> bool:\n"
             "    return check_credentials(username, password)"
@@ -41,6 +49,9 @@ SAMPLE_CHUNKS = [
     ),
     CodeChunk(
         id="models.py:User:1",
+        symbol_id="models.py::User#class",
+        qualified_name="User",
+        visibility="public",
         content=(
             "class User:\n"
             "    def __init__(self, name: str, email: str) -> None:\n"
@@ -222,3 +233,44 @@ def test_store_connection_accessible(tmp_path: Path) -> None:
     db = tmp_path / "conn.db"
     with IndexStore(db) as s:
         assert isinstance(s.conn, sqlite3.Connection)
+
+
+def test_symbol_id_fields_round_trip(store: IndexStore) -> None:
+    store.insert_chunks(SAMPLE_CHUNKS)
+    chunk = store.get_chunk("utils.py:calculate_sum:5")
+    assert chunk is not None
+    assert chunk.symbol_id == "utils.py::calculate_sum#function"
+    assert chunk.qualified_name == "calculate_sum"
+    assert chunk.visibility == "public"
+    assert chunk.signature == "def calculate_sum(a: int, b: int) -> int"
+
+
+def test_get_chunk_by_symbol_id(store: IndexStore) -> None:
+    store.insert_chunks(SAMPLE_CHUNKS)
+    chunk = store.get_chunk_by_symbol_id("auth.py::authenticate#function")
+    assert chunk is not None
+    assert chunk.id == "auth.py:authenticate:10"
+    assert chunk.qualified_name == "authenticate"
+
+
+def test_get_chunks_by_symbol_ids(store: IndexStore) -> None:
+    store.insert_chunks(SAMPLE_CHUNKS)
+    chunks = store.get_chunks_by_symbol_ids(
+        ["utils.py::calculate_sum#function", "models.py::User#class"]
+    )
+    assert len(chunks) == 2
+    ids = {c.symbol_id for c in chunks}
+    assert "utils.py::calculate_sum#function" in ids
+    assert "models.py::User#class" in ids
+
+
+def test_search_symbols(store: IndexStore) -> None:
+    store.insert_chunks(SAMPLE_CHUNKS)
+    results = store.search_symbols("authenticate")
+    assert len(results) == 1
+    assert results[0].symbol_id == "auth.py::authenticate#function"
+
+
+def test_search_symbols_no_match(store: IndexStore) -> None:
+    store.insert_chunks(SAMPLE_CHUNKS)
+    assert store.search_symbols("nonexistent_xyz") == []

@@ -175,7 +175,7 @@ def test_models_rs_impl_method_parent(engine: TreeSitterEngine, adapter: RustAda
     tree = parse(engine, source)
     symbols = adapter.extract_symbols(tree, source, "src/models.rs")
     new_method = next(s for s in symbols if s.name == "new" and s.parent == "User")
-    assert new_method.qualified_name == "User.new"
+    assert new_method.qualified_name == "impl_User::new"
     assert new_method.visibility == Visibility.PUBLIC
 
 
