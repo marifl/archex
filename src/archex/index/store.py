@@ -23,7 +23,12 @@ CREATE TABLE IF NOT EXISTS chunks (
     symbol_kind TEXT,
     language TEXT NOT NULL,
     imports_context TEXT DEFAULT '',
-    token_count INTEGER DEFAULT 0
+    token_count INTEGER DEFAULT 0,
+    symbol_id TEXT,
+    qualified_name TEXT,
+    visibility TEXT,
+    signature TEXT,
+    docstring TEXT
 );
 """
 
@@ -44,35 +49,61 @@ CREATE TABLE IF NOT EXISTS metadata (
 """
 
 _CREATE_IDX_CHUNKS_FILE = "CREATE INDEX IF NOT EXISTS idx_chunks_file ON chunks(file_path);"
+_CREATE_IDX_CHUNKS_SYMBOL_ID = (
+    "CREATE INDEX IF NOT EXISTS idx_chunks_symbol_id ON chunks(symbol_id);"
+)
+_CREATE_IDX_CHUNKS_SYMBOL_NAME = (
+    "CREATE INDEX IF NOT EXISTS idx_chunks_symbol_name ON chunks(symbol_name);"
+)
+_CREATE_IDX_CHUNKS_SYMBOL_KIND = (
+    "CREATE INDEX IF NOT EXISTS idx_chunks_symbol_kind ON chunks(symbol_kind);"
+)
+_CREATE_IDX_CHUNKS_LANGUAGE = "CREATE INDEX IF NOT EXISTS idx_chunks_language ON chunks(language);"
+_CREATE_IDX_CHUNKS_VISIBILITY = (
+    "CREATE INDEX IF NOT EXISTS idx_chunks_visibility ON chunks(visibility);"
+)
 _CREATE_IDX_EDGES_SOURCE = "CREATE INDEX IF NOT EXISTS idx_edges_source ON edges(source);"
 _CREATE_IDX_EDGES_TARGET = "CREATE INDEX IF NOT EXISTS idx_edges_target ON edges(target);"
 
+_CREATE_SYMBOLS_FTS = """
+CREATE VIRTUAL TABLE IF NOT EXISTS symbols_fts USING fts5(
+    symbol_id,
+    symbol_name,
+    qualified_name,
+    file_path,
+    tokenize='unicode61'
+);
+"""
+
+_SYMBOL_COLUMNS = ["symbol_id", "qualified_name", "visibility", "signature", "docstring"]
+
+
+_CHUNK_SELECT = (
+    "SELECT id, content, file_path, start_line, end_line, symbol_name, symbol_kind, "
+    "language, imports_context, token_count, symbol_id, qualified_name, visibility, "
+    "signature, docstring FROM chunks"
+)
+
 
 def _row_to_chunk(row: tuple[object, ...]) -> CodeChunk:
-    (
-        id_,
-        content,
-        file_path,
-        start_line,
-        end_line,
-        symbol_name,
-        symbol_kind_str,
-        language,
-        imports_context,
-        token_count,
-    ) = row
+    symbol_kind_str = row[6]
     symbol_kind: SymbolKind | None = SymbolKind(symbol_kind_str) if symbol_kind_str else None
     return CodeChunk(
-        id=str(id_),
-        content=str(content),
-        file_path=str(file_path),
-        start_line=int(start_line),  # type: ignore[arg-type]
-        end_line=int(end_line),  # type: ignore[arg-type]
-        symbol_name=str(symbol_name) if symbol_name is not None else None,
+        id=str(row[0]),
+        content=str(row[1]),
+        file_path=str(row[2]),
+        start_line=int(row[3]),  # type: ignore[arg-type]
+        end_line=int(row[4]),  # type: ignore[arg-type]
+        symbol_name=str(row[5]) if row[5] is not None else None,
         symbol_kind=symbol_kind,
-        language=str(language),
-        imports_context=str(imports_context) if imports_context else "",
-        token_count=int(token_count) if token_count is not None else 0,  # type: ignore[arg-type]
+        language=str(row[7]),
+        imports_context=str(row[8]) if row[8] else "",
+        token_count=int(row[9]) if row[9] is not None else 0,  # type: ignore[arg-type]
+        symbol_id=str(row[10]) if len(row) > 10 and row[10] is not None else None,
+        qualified_name=str(row[11]) if len(row) > 11 and row[11] is not None else None,
+        visibility=str(row[12]) if len(row) > 12 and row[12] is not None else None,
+        signature=str(row[13]) if len(row) > 13 and row[13] is not None else None,
+        docstring=str(row[14]) if len(row) > 14 and row[14] is not None else None,
     )
 
 
@@ -85,6 +116,7 @@ class IndexStore:
         try:
             self._conn.execute("PRAGMA journal_mode=WAL")
             self.create_schema()
+            self._migrate_schema()
         except Exception:
             self._conn.close()
             raise
@@ -105,8 +137,9 @@ class IndexStore:
         self._conn.executemany(
             "INSERT OR REPLACE INTO chunks "
             "(id, content, file_path, start_line, end_line, symbol_name, symbol_kind, "
-            "language, imports_context, token_count) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "language, imports_context, token_count, symbol_id, qualified_name, "
+            "visibility, signature, docstring) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             [
                 (
                     c.id,
@@ -119,10 +152,28 @@ class IndexStore:
                     c.language,
                     c.imports_context,
                     c.token_count,
+                    c.symbol_id,
+                    c.qualified_name,
+                    c.visibility,
+                    c.signature,
+                    c.docstring,
                 )
                 for c in chunks
             ],
         )
+        # Populate symbols_fts for chunks that have a symbol_id
+        fts_rows = [
+            (c.symbol_id, c.symbol_name, c.qualified_name, c.file_path)
+            for c in chunks
+            if c.symbol_id is not None
+        ]
+        if fts_rows:
+            self._conn.executemany(
+                "INSERT OR REPLACE INTO symbols_fts "
+                "(symbol_id, symbol_name, qualified_name, file_path) "
+                "VALUES (?, ?, ?, ?)",
+                fts_rows,
+            )
         self._conn.commit()
 
     def insert_edges(self, edges: list[Edge]) -> None:
@@ -133,18 +184,11 @@ class IndexStore:
         self._conn.commit()
 
     def get_chunks(self) -> list[CodeChunk]:
-        cur = self._conn.execute(
-            "SELECT id, content, file_path, start_line, end_line, symbol_name, symbol_kind, "
-            "language, imports_context, token_count FROM chunks"
-        )
+        cur = self._conn.execute(_CHUNK_SELECT)
         return [_row_to_chunk(row) for row in cur.fetchall()]
 
     def get_chunk(self, chunk_id: str) -> CodeChunk | None:
-        cur = self._conn.execute(
-            "SELECT id, content, file_path, start_line, end_line, symbol_name, symbol_kind, "
-            "language, imports_context, token_count FROM chunks WHERE id = ?",
-            (chunk_id,),
-        )
+        cur = self._conn.execute(f"{_CHUNK_SELECT} WHERE id = ?", (chunk_id,))
         row = cur.fetchone()
         return _row_to_chunk(row) if row else None
 
@@ -153,21 +197,44 @@ class IndexStore:
         if not ids:
             return []
         placeholders = ",".join("?" for _ in ids)
-        sql = (
-            "SELECT id, content, file_path, start_line, end_line, symbol_name, "
-            "symbol_kind, language, imports_context, token_count "
-            f"FROM chunks WHERE id IN ({placeholders})"
-        )
-        cur = self._conn.execute(sql, ids)
+        cur = self._conn.execute(f"{_CHUNK_SELECT} WHERE id IN ({placeholders})", ids)
         return [_row_to_chunk(row) for row in cur.fetchall()]
 
     def get_chunks_for_file(self, file_path: str) -> list[CodeChunk]:
-        cur = self._conn.execute(
-            "SELECT id, content, file_path, start_line, end_line, symbol_name, symbol_kind, "
-            "language, imports_context, token_count FROM chunks WHERE file_path = ?",
-            (file_path,),
-        )
+        cur = self._conn.execute(f"{_CHUNK_SELECT} WHERE file_path = ?", (file_path,))
         return [_row_to_chunk(row) for row in cur.fetchall()]
+
+    def get_chunk_by_symbol_id(self, symbol_id: str) -> CodeChunk | None:
+        cur = self._conn.execute(f"{_CHUNK_SELECT} WHERE symbol_id = ?", (symbol_id,))
+        row = cur.fetchone()
+        return _row_to_chunk(row) if row else None
+
+    def get_chunks_by_symbol_ids(self, symbol_ids: list[str]) -> list[CodeChunk]:
+        if not symbol_ids:
+            return []
+        placeholders = ",".join("?" for _ in symbol_ids)
+        cur = self._conn.execute(f"{_CHUNK_SELECT} WHERE symbol_id IN ({placeholders})", symbol_ids)
+        return [_row_to_chunk(row) for row in cur.fetchall()]
+
+    def search_symbols(
+        self,
+        query: str,
+        kind: SymbolKind | None = None,
+        limit: int = 50,
+    ) -> list[CodeChunk]:
+        escaped = query.replace('"', '""')
+        fts_query = f'"{escaped}"'
+        cur = self._conn.execute(
+            "SELECT symbol_id FROM symbols_fts WHERE symbols_fts MATCH ? LIMIT ?",
+            (fts_query, limit),
+        )
+        symbol_ids = [str(row[0]) for row in cur.fetchall()]
+        if not symbol_ids:
+            return []
+        chunks = self.get_chunks_by_symbol_ids(symbol_ids)
+        if kind is not None:
+            chunks = [c for c in chunks if c.symbol_kind == kind]
+        return chunks
 
     def get_edges(self) -> list[Edge]:
         cur = self._conn.execute("SELECT source, target, kind, location FROM edges")
@@ -186,6 +253,23 @@ class IndexStore:
         cur = self._conn.execute("SELECT value FROM metadata WHERE key = ?", (key,))
         row = cur.fetchone()
         return str(row[0]) if row else None
+
+    def _migrate_schema(self) -> None:
+        cur = self._conn.execute("PRAGMA table_info(chunks)")
+        columns = {row[1] for row in cur.fetchall()}
+        for col in _SYMBOL_COLUMNS:
+            if col not in columns:
+                self._conn.execute(f"ALTER TABLE chunks ADD COLUMN {col} TEXT")
+        # Create indexes and FTS table after columns exist
+        self._conn.executescript(
+            _CREATE_IDX_CHUNKS_SYMBOL_ID
+            + _CREATE_IDX_CHUNKS_SYMBOL_NAME
+            + _CREATE_IDX_CHUNKS_SYMBOL_KIND
+            + _CREATE_IDX_CHUNKS_LANGUAGE
+            + _CREATE_IDX_CHUNKS_VISIBILITY
+            + _CREATE_SYMBOLS_FTS
+        )
+        self._conn.commit()
 
     @property
     def conn(self) -> sqlite3.Connection:
