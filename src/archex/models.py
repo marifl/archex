@@ -46,6 +46,28 @@ class PatternCategory(StrEnum):
 
 
 # ---------------------------------------------------------------------------
+# Type aliases
+# ---------------------------------------------------------------------------
+
+SymbolId = str
+
+
+def make_symbol_id(
+    file_path: str,
+    qualified_name: str | None,
+    kind: SymbolKind | None,
+) -> SymbolId:
+    """Build a stable, line-independent symbol identifier.
+
+    Format: ``file_path::qualified_name#kind``
+    File-level (no symbol): ``file_path::_module#module``
+    """
+    name = qualified_name if qualified_name is not None else "_module"
+    kind_str = str(kind) if kind is not None else "module"
+    return f"{file_path}::{name}#{kind_str}"
+
+
+# ---------------------------------------------------------------------------
 # Input models
 # ---------------------------------------------------------------------------
 
@@ -130,6 +152,7 @@ class SymbolRef(BaseModel):
     qualified_name: str
     file_path: str
     kind: SymbolKind
+    symbol_id: SymbolId | None = None
 
 
 class Symbol(BaseModel):
@@ -181,6 +204,11 @@ class CodeChunk(BaseModel):
     language: str
     imports_context: str = ""
     token_count: int = 0
+    symbol_id: SymbolId | None = None
+    qualified_name: str | None = None
+    visibility: str | None = None
+    signature: str | None = None
+    docstring: str | None = None
 
 
 class Edge(BaseModel):
