@@ -387,9 +387,7 @@ def run_batch_symbols(source: RepoSource, r: ShowcaseResults) -> float:
         archex_tok = sum(s.token_count for s in found_syms)
         if raw_tok > 0:
             savings = (1 - archex_tok / raw_tok) * 100
-            r.efficiency.append(
-                EfficiencyRow("get_symbols_batch()", raw_tok, archex_tok, savings)
-            )
+            r.efficiency.append(EfficiencyRow("get_symbols_batch()", raw_tok, archex_tok, savings))
 
     return elapsed
 
@@ -607,12 +605,8 @@ def run_insights(r: ShowcaseResults) -> None:
         if profile.module_map:
             multi_file_modules = [m for m in profile.module_map if m.file_count > 1]
             single_file_modules = module_count - len(multi_file_modules)
-            avg_cohesion = (
-                sum(m.cohesion_score for m in profile.module_map) / module_count
-            )
-            avg_files_per_module = (
-                stats.total_files / module_count if module_count else 0
-            )
+            avg_cohesion = sum(m.cohesion_score for m in profile.module_map) / module_count
+            avg_files_per_module = stats.total_files / module_count if module_count else 0
 
             indent(f"Modules:        {module_count} total")
             indent(f"  Multi-file:   {len(multi_file_modules)}")
@@ -729,9 +723,7 @@ def run_insights(r: ShowcaseResults) -> None:
         indent("─" * 40)
         dims = r.comparison.dimensions
         indent(f"Dimensions:     {len(dims)}")
-        all_symmetric = all(
-            d.repo_a_approach == d.repo_b_approach for d in dims
-        )
+        all_symmetric = all(d.repo_a_approach == d.repo_b_approach for d in dims)
         if all_symmetric:
             indent("Self-compare:   ✓ symmetric (all dimensions match)")
         else:
