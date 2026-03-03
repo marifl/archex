@@ -5,6 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+import pytest
+
 from archex.api import analyze, compare, query
 
 if TYPE_CHECKING:
@@ -915,6 +917,76 @@ class TestDeltaIndexIntegration:
             assert manifest.current_commit == "mtime"
         finally:
             store.close()
+
+
+# ---------------------------------------------------------------------------
+# New language integration tests (Java, Kotlin, C#, Swift)
+# ---------------------------------------------------------------------------
+
+
+class TestNewLanguageIntegration:
+    """Full analyze() and query() pipelines for v0.5.4 language adapters."""
+
+    @pytest.mark.parametrize(
+        ("language", "fixture_name"),
+        [
+            ("java", "java_simple_repo"),
+            ("kotlin", "kotlin_simple_repo"),
+            ("csharp", "csharp_simple_repo"),
+            ("swift", "swift_simple_repo"),
+        ],
+    )
+    def test_analyze_new_language(
+        self, language: str, fixture_name: str, request: pytest.FixtureRequest
+    ) -> None:
+        repo_path: Path = request.getfixturevalue(fixture_name)
+        source = RepoSource(local_path=str(repo_path))
+        profile = analyze(source, config=Config(languages=[language]))
+
+        assert isinstance(profile, ArchProfile)
+        assert profile.repo.total_files > 0
+        assert language in profile.repo.languages
+        assert len(profile.module_map) > 0
+
+    @pytest.mark.parametrize(
+        ("language", "fixture_name", "query_term"),
+        [
+            ("java", "java_simple_repo", "User"),
+            ("kotlin", "kotlin_simple_repo", "User"),
+            ("csharp", "csharp_simple_repo", "User"),
+            ("swift", "swift_simple_repo", "User"),
+        ],
+    )
+    def test_query_new_language(
+        self,
+        language: str,
+        fixture_name: str,
+        query_term: str,
+        request: pytest.FixtureRequest,
+    ) -> None:
+        repo_path: Path = request.getfixturevalue(fixture_name)
+        source = RepoSource(local_path=str(repo_path))
+        bundle = query(
+            source,
+            query_term,
+            config=Config(languages=[language], cache=False),
+        )
+
+        assert isinstance(bundle, ContextBundle)
+
+    def test_delta_index_java(self, java_simple_repo: Path, tmp_path: Path) -> None:
+        source = RepoSource(local_path=str(java_simple_repo))
+        config = Config(languages=["java"], cache=True, cache_dir=str(tmp_path / "cache"))
+        query(source, "User", config=config)  # initial index
+
+        (java_simple_repo / "models" / "User.java").write_text(
+            "public class User { public int deltaField; }\n"
+        )
+        _git(java_simple_repo, "add", ".")
+        _git(java_simple_repo, "commit", "-m", "delta test")
+
+        bundle = query(source, "deltaField", config=config)
+        assert isinstance(bundle, ContextBundle)
 
 
 class TestPluginBootstrapLifecycle:
