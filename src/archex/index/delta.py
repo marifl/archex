@@ -13,6 +13,8 @@ from archex.models import (
     ChangeStatus,
     DeltaManifest,
     DeltaMeta,
+    Edge,
+    EdgeKind,
     FileChange,
     IndexConfig,
 )
@@ -20,7 +22,7 @@ from archex.models import (
 if TYPE_CHECKING:
     from archex.index.graph import DependencyGraph
     from archex.index.store import IndexStore
-    from archex.models import CodeChunk, Config, Edge
+    from archex.models import CodeChunk, Config
 
 logger = logging.getLogger(__name__)
 
@@ -136,7 +138,6 @@ def apply_delta(
     from archex.acquire import discover_files
     from archex.index.bm25 import BM25Index
     from archex.index.chunker import ASTChunker
-    from archex.index.graph import DependencyGraph as _DepGraph
     from archex.parse import (
         TreeSitterEngine,
         build_file_map,
@@ -185,8 +186,8 @@ def apply_delta(
 
             parsed_files = extract_symbols(changed_files, engine, adapters)
             import_map = parse_imports(changed_files, engine, adapters)
-            file_map = build_file_map(changed_files)
-            file_languages = {f.path: f.language for f in changed_files}
+            file_map = build_file_map(all_files)
+            file_languages = {f.path: f.language for f in all_files}
             resolved_map = resolve_imports(import_map, file_map, adapters, file_languages)
 
             index_config = IndexConfig()
@@ -199,8 +200,17 @@ def apply_delta(
                     continue
             new_chunks = chunker.chunk_files(parsed_files, sources)
 
-            temp_graph = _DepGraph.from_parsed_files(parsed_files, resolved_map)
-            new_edges = temp_graph.file_edges()
+            new_edges = [
+                Edge(
+                    source=file_path,
+                    target=imp.resolved_path,
+                    kind=EdgeKind.IMPORTS,
+                    location=f"{file_path}:{imp.line}",
+                )
+                for file_path, imps in resolved_map.items()
+                for imp in imps
+                if imp.resolved_path is not None
+            ]
 
             logger.info(
                 "Re-parsed %d files: %d chunks, %d edges",

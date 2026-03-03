@@ -341,6 +341,59 @@ class TestApplyDelta:
         finally:
             store.close()
 
+    def test_delta_import_resolution_uses_full_file_map(self, tmp_path: Path) -> None:
+        """Verify that delta re-parse resolves imports targeting unchanged files.
+
+        File A imports from file B. Only A is modified in the delta. The edge
+        A→B must be present after apply_delta, proving build_file_map received
+        all_files (including unchanged B) rather than only changed_files.
+        """
+        from archex.index.graph import DependencyGraph
+
+        repo = tmp_path / "import_repo"
+        repo.mkdir()
+        (repo / "library.py").write_text("def helper():\n    return 1\n")
+        (repo / "consumer.py").write_text(
+            "from library import helper\n\ndef run():\n    return helper()\n"
+        )
+        _git(repo, "init")
+        _git(repo, "config", "user.email", "test@archex.test")
+        _git(repo, "config", "user.name", "archex-test")
+        _git(repo, "add", ".")
+        _git(repo, "commit", "-m", "initial")
+
+        db_dir = tmp_path / "db_initial"
+        db_dir.mkdir()
+        store, graph = self._build_initial_index(repo, db_dir)
+        assert isinstance(graph, DependencyGraph)
+        try:
+            initial_edges = {(e.source, e.target) for e in store.get_edges()}
+            assert ("consumer.py", "library.py") in initial_edges, (
+                "initial index must have consumer.py -> library.py edge"
+            )
+
+            base = _git_head(repo)
+            # Modify only consumer.py; library.py is unchanged
+            (repo / "consumer.py").write_text(
+                "from library import helper\n\ndef run():\n    return helper() + 1\n"
+            )
+            _git(repo, "add", ".")
+            _git(repo, "commit", "-m", "modify consumer only")
+            current = _git_head(repo)
+
+            manifest = compute_delta(repo, base, current)
+            assert manifest.modified_files == ["consumer.py"]
+            assert "library.py" not in manifest.modified_files
+
+            apply_delta(store, graph, manifest, repo, Config(cache=False))
+
+            after_edges = {(e.source, e.target) for e in store.get_edges()}
+            assert ("consumer.py", "library.py") in after_edges, (
+                "edge consumer.py -> library.py must survive delta when only consumer.py changed"
+            )
+        finally:
+            store.close()
+
 
 # ---------------------------------------------------------------------------
 # TestComputeMtimeDelta
