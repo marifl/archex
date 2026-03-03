@@ -72,7 +72,7 @@ def _full_index(
 ) -> IndexStore:
     """Run the full acquire → parse → chunk → store pipeline."""
     t_acq = time.perf_counter()
-    repo_path, _url, _local_path, cleanup = _acquire(source)
+    repo_path, _url, _local_path, cleanup, cloned_head = _acquire(source)
     if timing is not None:
         timing.acquire_ms = _elapsed_ms(t_acq)
     try:
@@ -110,7 +110,7 @@ def _full_index(
         store.insert_edges(edges)
 
         if config.cache:
-            commit = cache.git_head(source.local_path) or source.commit or ""
+            commit = cloned_head or cache.git_head(source.local_path) or source.commit or ""
             identity = source.url or source.local_path or ""
             store.set_metadata("commit_hash", commit)
             store.set_metadata("source_identity", identity)
@@ -156,8 +156,8 @@ def _ensure_index(
         store.close()
         cache.invalidate(cache_key)
 
-    # Path 2: Delta path — same repo, different commit
-    if config.cache:
+    # Path 2: Delta path — same repo, different commit (local repos only)
+    if config.cache and source.local_path:
         existing = cache.find_store_for_source(source)
         if existing is not None:
             db_path, cached_commit = existing
@@ -268,22 +268,26 @@ def _elapsed_ms(start: float) -> float:
     return (time.perf_counter() - start) * 1000
 
 
-def _acquire(source: RepoSource) -> tuple[Path, str | None, str | None, Callable[[], None]]:
-    """Resolve a RepoSource to a local path, returning a cleanup callable."""
+def _acquire(
+    source: RepoSource,
+) -> tuple[Path, str | None, str | None, Callable[[], None], str | None]:
+    """Resolve a RepoSource to a local path, returning a cleanup callable and cloned HEAD."""
     if source.url and (source.url.startswith("http://") or source.url.startswith("https://")):
         target_dir = tempfile.mkdtemp()
 
         def _url_cleanup() -> None:
             shutil.rmtree(target_dir, ignore_errors=True)
 
-        return clone_repo(source.url, target_dir), source.url, None, _url_cleanup
+        repo_path = clone_repo(source.url, target_dir)
+        cloned_head = CacheManager.git_head(str(repo_path))
+        return repo_path, source.url, None, _url_cleanup, cloned_head
 
     if source.local_path is not None:
 
         def _noop() -> None:
             pass
 
-        return open_local(source.local_path), None, source.local_path, _noop
+        return open_local(source.local_path), None, source.local_path, _noop, None
     raise ValueError("RepoSource must have a url or local_path")
 
 
@@ -307,7 +311,7 @@ def analyze(
     _bootstrap_plugins()
 
     t0 = time.perf_counter()
-    repo_path, url, local_path, cleanup = _acquire(source)
+    repo_path, url, local_path, cleanup, _cloned_head = _acquire(source)
     acquire_ms = _elapsed_ms(t0)
     logger.info("Acquired repo %s in %.0fms", url or local_path, acquire_ms)
     if timing is not None:
@@ -475,7 +479,7 @@ def query(
     # Cache miss — full pipeline
     logger.info("Cache miss — running full pipeline")
     t1 = time.perf_counter()
-    repo_path, _url, _local_path, cleanup = _acquire(source)
+    repo_path, _url, _local_path, cleanup, cloned_head = _acquire(source)
     acquire_ms = _elapsed_ms(t1)
     logger.info("Acquired repo in %.0fms", acquire_ms)
     if timing is not None:
@@ -547,7 +551,7 @@ def query(
                         )
 
             if config.cache:
-                commit = cache.git_head(source.local_path) or source.commit or ""
+                commit = cloned_head or cache.git_head(source.local_path) or source.commit or ""
                 identity = source.url or source.local_path or ""
                 store.set_metadata("commit_hash", commit)
                 store.set_metadata("source_identity", identity)

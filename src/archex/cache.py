@@ -30,11 +30,10 @@ class CacheManager:
     # Key helpers
     # ------------------------------------------------------------------
 
-    def cache_key(self, source: RepoSource) -> str:
+    def cache_key(self, source: RepoSource, *, head_override: str | None = None) -> str:
         """Derive a stable SHA256 cache key from the source identity and git HEAD."""
         identity = source.url or source.local_path or ""
-        # Include git HEAD commit for local repos to invalidate on new commits
-        commit = source.commit or self.git_head(source.local_path)
+        commit = source.commit or head_override or self.git_head(source.local_path)
         if commit:
             identity = f"{identity}@{commit}"
         return hashlib.sha256(identity.encode()).hexdigest()

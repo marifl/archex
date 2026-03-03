@@ -127,6 +127,15 @@ def test_cache_key_local_path(cache: CacheManager) -> None:
     assert len(key) == 64
 
 
+def test_cache_key_head_override(tmp_path: Path) -> None:
+    """cache_key with head_override produces a different key than without."""
+    cm = CacheManager(cache_dir=str(tmp_path))
+    source = RepoSource(url="https://example.com/repo.git")
+    key_no_head = cm.cache_key(source)
+    key_with_head = cm.cache_key(source, head_override="abc123")
+    assert key_no_head != key_with_head
+
+
 # ---------------------------------------------------------------------------
 # Key validation — adversarial
 # ---------------------------------------------------------------------------
