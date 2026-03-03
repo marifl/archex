@@ -267,9 +267,7 @@ class TestVectorIndexPersistence:
 
 
 class TestVectorIndexEmbedderManifest:
-    def test_save_load_with_matching_embedder(
-        self, embedder: FakeEmbedder, tmp_path: Path
-    ) -> None:
+    def test_save_load_with_matching_embedder(self, embedder: FakeEmbedder, tmp_path: Path) -> None:
         """save/load round-trip succeeds when embedder name and dim match."""
         idx = VectorIndex()
         idx.build(SAMPLE_CHUNKS[:2], embedder)
