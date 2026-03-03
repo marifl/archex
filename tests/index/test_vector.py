@@ -266,6 +266,57 @@ class TestVectorIndexPersistence:
             loaded.load(corrupt_path, SAMPLE_CHUNKS)
 
 
+class TestVectorIndexEmbedderManifest:
+    def test_save_load_with_matching_embedder(self, embedder: FakeEmbedder, tmp_path: Path) -> None:
+        """save/load round-trip succeeds when embedder name and dim match."""
+        idx = VectorIndex()
+        idx.build(SAMPLE_CHUNKS[:2], embedder)
+        p = tmp_path / "vec.npz"
+        idx.save(p, embedder_name="fake", vector_dim=64)
+
+        idx2 = VectorIndex()
+        idx2.load(p, SAMPLE_CHUNKS[:2], embedder_name="fake", vector_dim=64)
+        assert idx2.size == 2
+
+    def test_load_rejects_mismatched_embedder_name(
+        self, embedder: FakeEmbedder, tmp_path: Path
+    ) -> None:
+        """load raises ArchexIndexError when embedder name doesn't match."""
+        idx = VectorIndex()
+        idx.build([SAMPLE_CHUNKS[0]], embedder)
+        p = tmp_path / "vec.npz"
+        idx.save(p, embedder_name="model-a", vector_dim=64)
+
+        idx2 = VectorIndex()
+        with pytest.raises(ArchexIndexError, match="Embedder mismatch"):
+            idx2.load(p, [SAMPLE_CHUNKS[0]], embedder_name="model-b", vector_dim=64)
+
+    def test_load_rejects_mismatched_vector_dim(
+        self, embedder: FakeEmbedder, tmp_path: Path
+    ) -> None:
+        """load raises ArchexIndexError when vector dimension doesn't match."""
+        idx = VectorIndex()
+        idx.build([SAMPLE_CHUNKS[0]], embedder)
+        p = tmp_path / "vec.npz"
+        idx.save(p, embedder_name="fake", vector_dim=64)
+
+        idx2 = VectorIndex()
+        with pytest.raises(ArchexIndexError, match="Vector dim mismatch"):
+            idx2.load(p, [SAMPLE_CHUNKS[0]], embedder_name="fake", vector_dim=768)
+
+    def test_load_tolerates_legacy_npz_without_meta(self, tmp_path: Path) -> None:
+        """load succeeds for legacy .npz files that lack embedder_meta."""
+        p = tmp_path / "legacy.npz"
+        np.savez_compressed(
+            str(p),
+            vectors=np.array([[1.0, 2.0, 3.0]], dtype=np.float32),
+            chunk_ids=np.array(["c1"], dtype="U512"),
+        )
+        idx = VectorIndex()
+        idx.load(p, [], embedder_name="anything", vector_dim=3)
+        assert idx.size == 1
+
+
 class TestReciprocalRankFusion:
     def test_rrf_merges_results(self) -> None:
         bm25: list[tuple[CodeChunk, float]] = [

@@ -439,7 +439,12 @@ def query(
                         from archex.index.vector import VectorIndex
 
                         vec_idx = VectorIndex()
-                        vec_idx.load(vec_path, cached_chunks)
+                        vec_idx.load(
+                            vec_path,
+                            cached_chunks,
+                            embedder_name=index_config.embedder or "",
+                            vector_dim=0,
+                        )
                         embedder = _get_embedder(index_config)
                         if embedder is not None:
                             vector_results = vec_idx.search(question, embedder, top_k=50)  # type: ignore[assignment]
@@ -535,7 +540,11 @@ def query(
                     logger.info("Vector index built in %.0fms", _elapsed_ms(t5))
 
                     if config.cache:
-                        vec_idx.save(cache.vector_path(cache_key))
+                        vec_idx.save(
+                            cache.vector_path(cache_key),
+                            embedder_name=index_config.embedder or "",
+                            vector_dim=vec_idx.dim,
+                        )
 
             if config.cache:
                 commit = cache.git_head(source.local_path) or source.commit or ""

@@ -84,7 +84,14 @@ class VectorIndex:
 
         return results
 
-    def save(self, path: Path) -> None:
+    @property
+    def dim(self) -> int:
+        """Return the vector dimension, or 0 if not built."""
+        if self._vectors is not None:
+            return int(self._vectors.shape[1])
+        return 0
+
+    def save(self, path: Path, *, embedder_name: str = "", vector_dim: int = 0) -> None:
         """Save vectors and chunk IDs to a compressed numpy file."""
         if self._vectors is None:
             raise ArchexIndexError("Cannot save empty vector index")
@@ -94,9 +101,17 @@ class VectorIndex:
             str(path),
             vectors=self._vectors,
             chunk_ids=np.array(self._chunk_ids, dtype="U512"),
+            embedder_meta=np.array([embedder_name, str(vector_dim)], dtype="U256"),
         )
 
-    def load(self, path: Path, chunks: list[CodeChunk]) -> None:
+    def load(
+        self,
+        path: Path,
+        chunks: list[CodeChunk],
+        *,
+        embedder_name: str = "",
+        vector_dim: int = 0,
+    ) -> None:
         """Load vectors from disk and rebuild the chunk lookup map."""
         if not path.exists():
             suffix = ".npz"
@@ -112,6 +127,20 @@ class VectorIndex:
             raise ArchexIndexError(
                 f"Vector index corrupt: {vectors.shape[0]} vectors but {len(chunk_ids)} chunk IDs"
             )
+
+        if "embedder_meta" in data:
+            stored = list(data["embedder_meta"])
+            if len(stored) >= 2:
+                stored_name, stored_dim = str(stored[0]), int(stored[1])
+                if embedder_name and stored_name and stored_name != embedder_name:
+                    raise ArchexIndexError(
+                        f"Embedder mismatch: cached={stored_name}, current={embedder_name}"
+                    )
+                if vector_dim > 0 and stored_dim > 0 and stored_dim != vector_dim:
+                    raise ArchexIndexError(
+                        f"Vector dim mismatch: cached={stored_dim}, current={vector_dim}"
+                    )
+
         self._vectors = vectors
         self._chunk_ids = chunk_ids
         self._chunks_by_id = {c.id: c for c in chunks}
