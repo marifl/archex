@@ -161,8 +161,8 @@ class TestRunBenchmark:
 
 
 class TestCloneAtCommit:
-    def test_clone_at_commit(self, python_simple_repo: Path) -> None:
-        """Exercise _clone_at_commit with a local file:// URL substitute."""
+    def testclone_at_commit(self, python_simple_repo: Path) -> None:
+        """Exercise clone_at_commit with a local file:// URL substitute."""
         import subprocess
 
         import archex.benchmark.runner as runner_mod
@@ -179,7 +179,7 @@ class TestCloneAtCommit:
 
         runner_mod.subprocess.run = mock_run  # type: ignore[assignment]
         try:
-            path, needs_cleanup = runner_mod._clone_at_commit("owner/repo", "abc123")
+            path, needs_cleanup = runner_mod.clone_at_commit("owner/repo", "abc123")
         finally:
             runner_mod.subprocess.run = original_run  # type: ignore[assignment]
 
@@ -213,8 +213,8 @@ class TestCloneAtCommit:
         def fake_clone(repo_slug: str, commit: str) -> tuple[Path, bool]:
             return clone_dir, True
 
-        original = runner_mod._clone_at_commit
-        runner_mod._clone_at_commit = fake_clone  # type: ignore[assignment]
+        original = runner_mod.clone_at_commit
+        runner_mod.clone_at_commit = fake_clone  # type: ignore[assignment]
         try:
             task = BenchmarkTask(
                 task_id="cleanup_test",
@@ -226,7 +226,7 @@ class TestCloneAtCommit:
             # repo_path=None triggers the clone + cleanup path
             run_benchmark(task, strategies=[Strategy.RAW_FILES], repo_path=None)
         finally:
-            runner_mod._clone_at_commit = original  # type: ignore[assignment]
+            runner_mod.clone_at_commit = original  # type: ignore[assignment]
 
         # clone_dir should have been cleaned up
         assert not clone_dir.exists()
@@ -258,12 +258,12 @@ expected_files:
 
         import archex.benchmark.runner as runner_mod
 
-        original = runner_mod._clone_at_commit
+        original = runner_mod.clone_at_commit
 
         def _fake_clone(repo_slug: str, commit: str) -> tuple[Path, bool]:
             return python_simple_repo, False
 
-        runner_mod._clone_at_commit = _fake_clone  # type: ignore[assignment]
+        runner_mod.clone_at_commit = _fake_clone  # type: ignore[assignment]
         try:
             reports = run_all(
                 tasks_dir=tasks_dir,
@@ -271,7 +271,7 @@ expected_files:
                 strategies=[Strategy.RAW_FILES],
             )
         finally:
-            runner_mod._clone_at_commit = original  # type: ignore[assignment]
+            runner_mod.clone_at_commit = original  # type: ignore[assignment]
 
         assert len(reports) == 1
         assert reports[0].task_id == "test_all"
@@ -311,12 +311,12 @@ expected_files:
 
         import archex.benchmark.runner as runner_mod
 
-        original = runner_mod._clone_at_commit
+        original = runner_mod.clone_at_commit
 
         def _fake_clone(repo_slug: str, commit: str) -> tuple[Path, bool]:
             return python_simple_repo, False
 
-        runner_mod._clone_at_commit = _fake_clone  # type: ignore[assignment]
+        runner_mod.clone_at_commit = _fake_clone  # type: ignore[assignment]
         try:
             reports = run_all(
                 tasks_dir=tasks_dir,
@@ -325,7 +325,7 @@ expected_files:
                 task_filter="test_all",
             )
         finally:
-            runner_mod._clone_at_commit = original  # type: ignore[assignment]
+            runner_mod.clone_at_commit = original  # type: ignore[assignment]
 
         assert len(reports) == 1
         assert reports[0].task_id == "test_all"

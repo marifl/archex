@@ -22,7 +22,7 @@ AVAILABLE_STRATEGIES: list[Strategy] = [
 ]
 
 
-def _clone_at_commit(repo_slug: str, commit: str) -> tuple[Path, bool]:
+def clone_at_commit(repo_slug: str, commit: str) -> tuple[Path, bool]:
     """Clone a GitHub repo and checkout a specific commit. Returns (path, needs_cleanup)."""
     url = f"https://github.com/{repo_slug}.git"
     target = Path(tempfile.mkdtemp(prefix="archex-bench-"))
@@ -53,7 +53,7 @@ def run_benchmark(
 
     needs_cleanup = False
     if repo_path is None:
-        repo_path, needs_cleanup = _clone_at_commit(task.repo, task.commit)
+        repo_path, needs_cleanup = clone_at_commit(task.repo, task.commit)
 
     try:
         results: list[BenchmarkResult] = []

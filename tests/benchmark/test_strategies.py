@@ -8,10 +8,10 @@ import pytest
 
 from archex.benchmark.models import BenchmarkTask, Strategy
 from archex.benchmark.strategies import (
-    _compute_precision,
-    _compute_recall,
-    _count_file_tokens,
-    _extract_keywords,
+    compute_precision,
+    compute_recall,
+    count_file_tokens,
+    extract_keywords,
     run_archex_query,
     run_archex_query_hybrid,
     run_archex_symbol_lookup,
@@ -37,38 +37,38 @@ def sample_task() -> BenchmarkTask:
 
 class TestComputeRecall:
     def test_full_recall(self) -> None:
-        assert _compute_recall({"a.py", "b.py"}, ["a.py", "b.py"]) == 1.0
+        assert compute_recall({"a.py", "b.py"}, ["a.py", "b.py"]) == 1.0
 
     def test_partial_recall(self) -> None:
-        assert _compute_recall({"a.py"}, ["a.py", "b.py"]) == 0.5
+        assert compute_recall({"a.py"}, ["a.py", "b.py"]) == 0.5
 
     def test_zero_recall(self) -> None:
-        assert _compute_recall({"c.py"}, ["a.py", "b.py"]) == 0.0
+        assert compute_recall({"c.py"}, ["a.py", "b.py"]) == 0.0
 
     def test_empty_expected(self) -> None:
-        assert _compute_recall({"a.py"}, []) == 0.0
+        assert compute_recall({"a.py"}, []) == 0.0
 
     def test_empty_results(self) -> None:
-        assert _compute_recall(set(), ["a.py"]) == 0.0
+        assert compute_recall(set(), ["a.py"]) == 0.0
 
 
 class TestComputePrecision:
     def test_full_precision(self) -> None:
-        assert _compute_precision({"a.py", "b.py"}, ["a.py", "b.py"]) == 1.0
+        assert compute_precision({"a.py", "b.py"}, ["a.py", "b.py"]) == 1.0
 
     def test_partial_precision(self) -> None:
-        assert _compute_precision({"a.py", "c.py"}, ["a.py", "b.py"]) == 0.5
+        assert compute_precision({"a.py", "c.py"}, ["a.py", "b.py"]) == 0.5
 
     def test_zero_precision(self) -> None:
-        assert _compute_precision({"c.py", "d.py"}, ["a.py", "b.py"]) == 0.0
+        assert compute_precision({"c.py", "d.py"}, ["a.py", "b.py"]) == 0.0
 
     def test_empty_results(self) -> None:
-        assert _compute_precision(set(), ["a.py"]) == 0.0
+        assert compute_precision(set(), ["a.py"]) == 0.0
 
 
 class TestExtractKeywords:
     def test_filters_stopwords(self) -> None:
-        kws = _extract_keywords("How does the auth module work?", [])
+        kws = extract_keywords("How does the auth module work?", [])
         assert "how" not in kws
         assert "does" not in kws
         assert "the" not in kws
@@ -76,30 +76,30 @@ class TestExtractKeywords:
         assert "module" in kws
 
     def test_includes_extra_keywords(self) -> None:
-        kws = _extract_keywords("test query", ["special"])
+        kws = extract_keywords("test query", ["special"])
         assert "special" in kws
 
     def test_deduplicates_extras(self) -> None:
-        kws = _extract_keywords("auth query", ["auth"])
+        kws = extract_keywords("auth query", ["auth"])
         assert kws.count("auth") == 1
 
     def test_filters_short_words(self) -> None:
-        kws = _extract_keywords("a is on go", [])
+        kws = extract_keywords("a is on go", [])
         # "go" has len 2, should be filtered
         assert "go" not in kws
 
 
 class TestCountFileTokens:
     def test_counts_real_files(self, python_simple_repo: Path) -> None:
-        tokens = _count_file_tokens(python_simple_repo, ["main.py"])
+        tokens = count_file_tokens(python_simple_repo, ["main.py"])
         assert tokens > 0
 
     def test_missing_file_skipped(self, python_simple_repo: Path) -> None:
-        tokens = _count_file_tokens(python_simple_repo, ["nonexistent.py"])
+        tokens = count_file_tokens(python_simple_repo, ["nonexistent.py"])
         assert tokens == 0
 
     def test_empty_file_list(self, python_simple_repo: Path) -> None:
-        tokens = _count_file_tokens(python_simple_repo, [])
+        tokens = count_file_tokens(python_simple_repo, [])
         assert tokens == 0
 
 

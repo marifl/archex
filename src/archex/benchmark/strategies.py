@@ -124,7 +124,7 @@ _STOPWORDS = frozenset(
 )
 
 
-def _compute_recall(result_files: set[str], expected_files: list[str]) -> float:
+def compute_recall(result_files: set[str], expected_files: list[str]) -> float:
     """Fraction of expected files found in results."""
     if not expected_files:
         return 0.0
@@ -132,7 +132,7 @@ def _compute_recall(result_files: set[str], expected_files: list[str]) -> float:
     return found / len(expected_files)
 
 
-def _compute_precision(result_files: set[str], expected_files: list[str]) -> float:
+def compute_precision(result_files: set[str], expected_files: list[str]) -> float:
     """Fraction of result files that are in the expected set."""
     if not result_files:
         return 0.0
@@ -141,7 +141,7 @@ def _compute_precision(result_files: set[str], expected_files: list[str]) -> flo
     return relevant / len(result_files)
 
 
-def _count_file_tokens(repo_path: Path, files: list[str]) -> int:
+def count_file_tokens(repo_path: Path, files: list[str]) -> int:
     """Count tokens across a list of files relative to repo_path."""
     total = 0
     for f in files:
@@ -152,7 +152,7 @@ def _count_file_tokens(repo_path: Path, files: list[str]) -> int:
     return total
 
 
-def _extract_keywords(question: str, extra_keywords: list[str]) -> list[str]:
+def extract_keywords(question: str, extra_keywords: list[str]) -> list[str]:
     """Extract search keywords from a question string, filtering stopwords."""
     words = re.findall(r"[a-zA-Z_][a-zA-Z0-9_]*", question)
     filtered = [w.lower() for w in words if w.lower() not in _STOPWORDS and len(w) > 2]
@@ -163,14 +163,14 @@ def _extract_keywords(question: str, extra_keywords: list[str]) -> list[str]:
     return filtered
 
 
-def _now_iso() -> str:
+def now_iso() -> str:
     return datetime.now(tz=UTC).isoformat()
 
 
 def run_raw_files(task: BenchmarkTask, repo_path: Path) -> BenchmarkResult:
     """Baseline strategy: read all expected files, count tokens."""
     t0 = time.perf_counter()
-    tokens = _count_file_tokens(repo_path, task.expected_files)
+    tokens = count_file_tokens(repo_path, task.expected_files)
     wall_ms = (time.perf_counter() - t0) * 1000
 
     return BenchmarkResult(
@@ -184,14 +184,14 @@ def run_raw_files(task: BenchmarkTask, repo_path: Path) -> BenchmarkResult:
         savings_vs_raw=0.0,
         wall_time_ms=wall_ms,
         cached=False,
-        timestamp=_now_iso(),
+        timestamp=now_iso(),
     )
 
 
 def run_raw_grepped(task: BenchmarkTask, repo_path: Path) -> BenchmarkResult:
     """Grep-based strategy: search repo for keywords, read matched files."""
     t0 = time.perf_counter()
-    keywords = _extract_keywords(task.question, task.keywords)
+    keywords = extract_keywords(task.question, task.keywords)
 
     matched_files: set[str] = set()
     for kw in keywords:
@@ -220,10 +220,10 @@ def run_raw_grepped(task: BenchmarkTask, repo_path: Path) -> BenchmarkResult:
                 if path:
                     matched_files.add(path)
 
-    tokens = _count_file_tokens(repo_path, list(matched_files))
+    tokens = count_file_tokens(repo_path, list(matched_files))
     wall_ms = (time.perf_counter() - t0) * 1000
-    recall = _compute_recall(matched_files, task.expected_files)
-    precision = _compute_precision(matched_files, task.expected_files)
+    recall = compute_recall(matched_files, task.expected_files)
+    precision = compute_precision(matched_files, task.expected_files)
 
     return BenchmarkResult(
         task_id=task.task_id,
@@ -236,7 +236,7 @@ def run_raw_grepped(task: BenchmarkTask, repo_path: Path) -> BenchmarkResult:
         savings_vs_raw=0.0,  # backfilled by runner
         wall_time_ms=wall_ms,
         cached=False,
-        timestamp=_now_iso(),
+        timestamp=now_iso(),
     )
 
 
@@ -262,8 +262,8 @@ def run_archex_query(task: BenchmarkTask, repo_path: Path) -> BenchmarkResult:
 
     result_files = {c.chunk.file_path for c in bundle.chunks}
     wall_ms = (time.perf_counter() - t0) * 1000
-    recall = _compute_recall(result_files, task.expected_files)
-    precision = _compute_precision(result_files, task.expected_files)
+    recall = compute_recall(result_files, task.expected_files)
+    precision = compute_precision(result_files, task.expected_files)
 
     return BenchmarkResult(
         task_id=task.task_id,
@@ -277,7 +277,7 @@ def run_archex_query(task: BenchmarkTask, repo_path: Path) -> BenchmarkResult:
         wall_time_ms=wall_ms,
         cached=timing.cached,
         timing=timing,
-        timestamp=_now_iso(),
+        timestamp=now_iso(),
     )
 
 
@@ -303,8 +303,8 @@ def run_archex_query_hybrid(task: BenchmarkTask, repo_path: Path) -> BenchmarkRe
 
     result_files = {c.chunk.file_path for c in bundle.chunks}
     wall_ms = (time.perf_counter() - t0) * 1000
-    recall = _compute_recall(result_files, task.expected_files)
-    precision = _compute_precision(result_files, task.expected_files)
+    recall = compute_recall(result_files, task.expected_files)
+    precision = compute_precision(result_files, task.expected_files)
 
     return BenchmarkResult(
         task_id=task.task_id,
@@ -318,7 +318,7 @@ def run_archex_query_hybrid(task: BenchmarkTask, repo_path: Path) -> BenchmarkRe
         wall_time_ms=wall_ms,
         cached=timing.cached,
         timing=timing,
-        timestamp=_now_iso(),
+        timestamp=now_iso(),
     )
 
 
