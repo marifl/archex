@@ -915,3 +915,49 @@ class TestDeltaIndexIntegration:
             assert manifest.current_commit == "mtime"
         finally:
             store.close()
+
+
+class TestPluginBootstrapLifecycle:
+    def test_bootstrap_nonstrict_then_strict_reloads(self) -> None:
+        """Non-strict bootstrap followed by strict should re-validate."""
+        import archex.api as api_mod
+
+        original = api_mod._plugin_bootstrap_strict
+        try:
+            api_mod._plugin_bootstrap_strict = None
+
+            api_mod._bootstrap_plugins(strict=False)
+            assert api_mod._plugin_bootstrap_strict is False
+
+            api_mod._bootstrap_plugins(strict=True)
+            assert api_mod._plugin_bootstrap_strict is True
+        finally:
+            api_mod._plugin_bootstrap_strict = original
+
+    def test_bootstrap_strict_then_nonstrict_skips(self) -> None:
+        """Strict bootstrap followed by non-strict should skip (already at higher level)."""
+        import archex.api as api_mod
+
+        original = api_mod._plugin_bootstrap_strict
+        try:
+            api_mod._plugin_bootstrap_strict = None
+
+            api_mod._bootstrap_plugins(strict=True)
+            assert api_mod._plugin_bootstrap_strict is True
+
+            api_mod._bootstrap_plugins(strict=False)
+            assert api_mod._plugin_bootstrap_strict is True  # unchanged
+        finally:
+            api_mod._plugin_bootstrap_strict = original
+
+    def test_adapter_registry_entry_points_strictness_upgrade(self) -> None:
+        """AdapterRegistry re-loads entry points when upgrading to strict."""
+        from archex.parse.adapters import AdapterRegistry
+
+        reg = AdapterRegistry()
+        reg.load_entry_points(strict=False)
+        assert reg._entry_points_loaded is True
+        assert reg._entry_points_strict is False
+
+        reg.load_entry_points(strict=True)
+        assert reg._entry_points_strict is True
