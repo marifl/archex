@@ -7,9 +7,13 @@ import logging
 
 from archex.exceptions import ConfigError
 from archex.parse.adapters.base import LanguageAdapter
+from archex.parse.adapters.csharp import CSharpAdapter
 from archex.parse.adapters.go import GoAdapter
+from archex.parse.adapters.java import JavaAdapter
+from archex.parse.adapters.kotlin import KotlinAdapter
 from archex.parse.adapters.python import PythonAdapter
 from archex.parse.adapters.rust import RustAdapter
+from archex.parse.adapters.swift import SwiftAdapter
 from archex.parse.adapters.typescript import TypeScriptAdapter
 
 logger = logging.getLogger(__name__)
@@ -80,6 +84,10 @@ default_adapter_registry.register("typescript", TypeScriptAdapter)  # type: igno
 default_adapter_registry.register("javascript", TypeScriptAdapter)  # type: ignore[type-abstract]
 default_adapter_registry.register("go", GoAdapter)  # type: ignore[type-abstract]
 default_adapter_registry.register("rust", RustAdapter)  # type: ignore[type-abstract]
+default_adapter_registry.register("java", JavaAdapter)  # type: ignore[type-abstract]
+default_adapter_registry.register("csharp", CSharpAdapter)  # type: ignore[type-abstract]
+default_adapter_registry.register("kotlin", KotlinAdapter)  # type: ignore[type-abstract]
+default_adapter_registry.register("swift", SwiftAdapter)  # type: ignore[type-abstract]
 
 # Legacy compat
 ADAPTERS: dict[str, type[LanguageAdapter]] = default_adapter_registry.adapter_classes
