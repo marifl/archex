@@ -49,21 +49,34 @@ def _make_comparison_result() -> ComparisonResult:
 class TestHandleAnalyzeRepo:
     def test_returns_json_by_default(self) -> None:
         profile = _make_arch_profile()
-        with patch("archex.integrations.mcp.analyze", return_value=profile) as mock_analyze:
+        with (
+            patch("archex.integrations.mcp.analyze", return_value=profile) as mock_analyze,
+            patch("archex.integrations.mcp.get_repo_total_tokens", return_value=10000),
+        ):
             result = handle_analyze_repo("/fake/repo")
         mock_analyze.assert_called_once()
         assert isinstance(result, str)
-        # JSON output should be parseable
         import json
 
         parsed = json.loads(result)
-        assert "repo" in parsed
+        assert "content" in parsed
+        assert "_meta" in parsed
+        assert parsed["_meta"]["tool_name"] == "analyze_repo"
+        assert parsed["_meta"]["strategy"] == "full_analysis"
+        assert parsed["_meta"]["tokens_raw_equivalent"] == 10000
 
     def test_returns_markdown_format(self) -> None:
         profile = _make_arch_profile()
-        with patch("archex.integrations.mcp.analyze", return_value=profile):
+        with (
+            patch("archex.integrations.mcp.analyze", return_value=profile),
+            patch("archex.integrations.mcp.get_repo_total_tokens", return_value=10000),
+        ):
             result = handle_analyze_repo("/fake/repo", "markdown")
-        assert "# Architecture Profile" in result
+        import json
+
+        parsed = json.loads(result)
+        assert "# Architecture Profile" in parsed["content"]
+        assert "_meta" in parsed
 
     def test_rejects_invalid_format(self) -> None:
         with pytest.raises(ValueError, match="format must be one of"):
@@ -71,7 +84,10 @@ class TestHandleAnalyzeRepo:
 
     def test_resolves_local_path(self) -> None:
         profile = _make_arch_profile()
-        with patch("archex.integrations.mcp.analyze", return_value=profile) as mock_analyze:
+        with (
+            patch("archex.integrations.mcp.analyze", return_value=profile) as mock_analyze,
+            patch("archex.integrations.mcp.get_repo_total_tokens", return_value=0),
+        ):
             handle_analyze_repo("/some/local/path")
         call_args = mock_analyze.call_args[0]
         source = call_args[0]
@@ -80,7 +96,10 @@ class TestHandleAnalyzeRepo:
 
     def test_resolves_https_url(self) -> None:
         profile = _make_arch_profile()
-        with patch("archex.integrations.mcp.analyze", return_value=profile) as mock_analyze:
+        with (
+            patch("archex.integrations.mcp.analyze", return_value=profile) as mock_analyze,
+            patch("archex.integrations.mcp.get_repo_total_tokens", return_value=0),
+        ):
             handle_analyze_repo("https://github.com/example/repo")
         call_args = mock_analyze.call_args[0]
         source = call_args[0]
@@ -89,7 +108,10 @@ class TestHandleAnalyzeRepo:
 
     def test_resolves_http_url(self) -> None:
         profile = _make_arch_profile()
-        with patch("archex.integrations.mcp.analyze", return_value=profile) as mock_analyze:
+        with (
+            patch("archex.integrations.mcp.analyze", return_value=profile) as mock_analyze,
+            patch("archex.integrations.mcp.get_repo_total_tokens", return_value=0),
+        ):
             handle_analyze_repo("http://example.com/repo")
         call_args = mock_analyze.call_args[0]
         source = call_args[0]
@@ -97,16 +119,29 @@ class TestHandleAnalyzeRepo:
 
 
 class TestHandleQueryRepo:
-    def test_returns_xml_prompt(self) -> None:
+    def test_returns_xml_prompt_with_meta(self) -> None:
         bundle = _make_context_bundle()
-        with patch("archex.integrations.mcp.query", return_value=bundle) as mock_query:
+        with (
+            patch("archex.integrations.mcp.query", return_value=bundle) as mock_query,
+            patch("archex.integrations.mcp.get_files_token_count", return_value=0),
+        ):
             result = handle_query_repo("/fake/repo", "how does auth work?")
         mock_query.assert_called_once()
         assert isinstance(result, str)
+        import json
+
+        parsed = json.loads(result)
+        assert "content" in parsed
+        assert "_meta" in parsed
+        assert parsed["_meta"]["tool_name"] == "query_repo"
+        assert parsed["_meta"]["strategy"] == "bm25+graph"
 
     def test_passes_token_budget(self) -> None:
         bundle = _make_context_bundle()
-        with patch("archex.integrations.mcp.query", return_value=bundle) as mock_query:
+        with (
+            patch("archex.integrations.mcp.query", return_value=bundle) as mock_query,
+            patch("archex.integrations.mcp.get_files_token_count", return_value=0),
+        ):
             handle_query_repo("/fake/repo", "what is the entry point?", budget=4000)
         budget = mock_query.call_args[1].get("token_budget") or mock_query.call_args[0][2]
         assert budget == 4000
@@ -125,27 +160,41 @@ class TestHandleQueryRepo:
 
     def test_resolves_source_from_url(self) -> None:
         bundle = _make_context_bundle()
-        with patch("archex.integrations.mcp.query", return_value=bundle) as mock_query:
+        with (
+            patch("archex.integrations.mcp.query", return_value=bundle) as mock_query,
+            patch("archex.integrations.mcp.get_files_token_count", return_value=0),
+        ):
             handle_query_repo("https://github.com/example/repo", "question?")
         source = mock_query.call_args[0][0]
         assert source.url == "https://github.com/example/repo"
 
 
 class TestHandleCompareRepos:
-    def test_returns_json(self) -> None:
+    def test_returns_json_with_meta(self) -> None:
         result = _make_comparison_result()
-        with patch("archex.integrations.mcp.compare", return_value=result) as mock_compare:
+        with (
+            patch("archex.integrations.mcp.compare", return_value=result) as mock_compare,
+            patch("archex.integrations.mcp.get_repo_total_tokens", return_value=5000),
+        ):
             output = handle_compare_repos("/fake/a", "/fake/b")
         mock_compare.assert_called_once()
         import json
 
         parsed = json.loads(output)
-        assert "repo_a" in parsed
-        assert "repo_b" in parsed
+        assert "content" in parsed
+        assert "repo_a" in parsed["content"]
+        assert "repo_b" in parsed["content"]
+        assert "_meta" in parsed
+        assert parsed["_meta"]["tool_name"] == "compare_repos"
+        assert parsed["_meta"]["strategy"] == "full_comparison"
+        assert parsed["_meta"]["tokens_raw_equivalent"] == 10000  # 5000 * 2 repos
 
     def test_passes_dimensions_list(self) -> None:
         result = _make_comparison_result()
-        with patch("archex.integrations.mcp.compare", return_value=result) as mock_compare:
+        with (
+            patch("archex.integrations.mcp.compare", return_value=result) as mock_compare,
+            patch("archex.integrations.mcp.get_repo_total_tokens", return_value=0),
+        ):
             handle_compare_repos("/fake/a", "/fake/b", "api_surface,concurrency")
         call_kwargs = mock_compare.call_args[1]
         dims = call_kwargs.get("dimensions") or mock_compare.call_args[0][2]
@@ -153,7 +202,10 @@ class TestHandleCompareRepos:
 
     def test_default_dimensions(self) -> None:
         result = _make_comparison_result()
-        with patch("archex.integrations.mcp.compare", return_value=result) as mock_compare:
+        with (
+            patch("archex.integrations.mcp.compare", return_value=result) as mock_compare,
+            patch("archex.integrations.mcp.get_repo_total_tokens", return_value=0),
+        ):
             handle_compare_repos("/fake/a", "/fake/b")
         call_kwargs = mock_compare.call_args[1]
         dims = call_kwargs.get("dimensions") or mock_compare.call_args[0][2]
@@ -166,7 +218,10 @@ class TestHandleCompareRepos:
 
     def test_resolves_sources(self) -> None:
         result = _make_comparison_result()
-        with patch("archex.integrations.mcp.compare", return_value=result) as mock_compare:
+        with (
+            patch("archex.integrations.mcp.compare", return_value=result) as mock_compare,
+            patch("archex.integrations.mcp.get_repo_total_tokens", return_value=0),
+        ):
             handle_compare_repos(
                 "https://github.com/example/a",
                 "/local/b",
@@ -179,7 +234,10 @@ class TestHandleCompareRepos:
 
     def test_validates_dimensions_valid(self) -> None:
         result = _make_comparison_result()
-        with patch("archex.integrations.mcp.compare", return_value=result) as mock_compare:
+        with (
+            patch("archex.integrations.mcp.compare", return_value=result) as mock_compare,
+            patch("archex.integrations.mcp.get_repo_total_tokens", return_value=5000),
+        ):
             handle_compare_repos(
                 "/fake/a",
                 "/fake/b",
@@ -421,7 +479,10 @@ from archex.models import (  # noqa: E402
 class TestHandleGetFileTree:
     def test_returns_json_with_meta(self) -> None:
         tree = FileTree(root="/repo", entries=[], total_files=0, languages={})
-        with patch("archex.integrations.mcp.file_tree", return_value=tree):
+        with (
+            patch("archex.integrations.mcp.file_tree", return_value=tree),
+            patch("archex.integrations.mcp.get_repo_total_tokens", return_value=5000),
+        ):
             result = handle_get_file_tree("/fake/repo")
         import json
 
@@ -430,10 +491,16 @@ class TestHandleGetFileTree:
         assert "_meta" in parsed
         assert parsed["_meta"]["tool_name"] == "get_file_tree"
         assert parsed["_meta"]["strategy"] == "file_tree"
+        assert parsed["_meta"]["tokens_raw_equivalent"] == 5000
+        # PipelineTiming integration: query_time_ms populated
+        assert isinstance(parsed["_meta"]["query_time_ms"], float)
 
     def test_passes_params(self) -> None:
         tree = FileTree(root="/repo", entries=[], total_files=0, languages={})
-        with patch("archex.integrations.mcp.file_tree", return_value=tree) as mock:
+        with (
+            patch("archex.integrations.mcp.file_tree", return_value=tree) as mock,
+            patch("archex.integrations.mcp.get_repo_total_tokens", return_value=0),
+        ):
             handle_get_file_tree("/fake", max_depth=3, language="python")
         call_kwargs = mock.call_args[1]
         assert call_kwargs["max_depth"] == 3
@@ -469,7 +536,10 @@ class TestHandleSearchSymbols:
             file_path="f.py",
             start_line=1,
         )
-        with patch("archex.integrations.mcp.search_symbols", return_value=[match]):
+        with (
+            patch("archex.integrations.mcp.search_symbols", return_value=[match]),
+            patch("archex.integrations.mcp.get_files_token_count", return_value=3000),
+        ):
             result = handle_search_symbols("/fake", "foo")
         import json
 
@@ -492,7 +562,10 @@ class TestHandleGetSymbol:
             end_line=3,
             source="def foo(): pass",
         )
-        with patch("archex.integrations.mcp.get_symbol", return_value=sym):
+        with (
+            patch("archex.integrations.mcp.get_symbol", return_value=sym),
+            patch("archex.integrations.mcp.get_file_token_count", return_value=2000),
+        ):
             result = handle_get_symbol("/fake", "f.py::foo#function")
         import json
 
@@ -501,6 +574,7 @@ class TestHandleGetSymbol:
         assert "_meta" in parsed
         assert parsed["_meta"]["tool_name"] == "get_symbol"
         assert parsed["_meta"]["strategy"] == "symbol_lookup"
+        assert parsed["_meta"]["tokens_raw_equivalent"] == 2000
 
     def test_returns_error_for_not_found(self) -> None:
         with patch("archex.integrations.mcp.get_symbol", return_value=None):
@@ -524,7 +598,10 @@ class TestHandleGetSymbolsBatch:
             end_line=3,
             source="def foo(): pass",
         )
-        with patch("archex.integrations.mcp.get_symbols_batch", return_value=[sym, None]):
+        with (
+            patch("archex.integrations.mcp.get_symbols_batch", return_value=[sym, None]),
+            patch("archex.integrations.mcp.get_files_token_count", return_value=4000),
+        ):
             result = handle_get_symbols_batch("/fake", ["f.py::foo#function", "missing"])
         import json
 

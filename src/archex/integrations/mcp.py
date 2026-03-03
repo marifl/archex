@@ -6,24 +6,25 @@ import asyncio
 import json
 import logging
 import time
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from archex.api import (
     analyze,
     compare,
     file_outline,
     file_tree,
+    get_file_token_count,
+    get_files_token_count,
+    get_repo_total_tokens,
     get_symbol,
     get_symbols_batch,
     query,
     search_symbols,
 )
+from archex.models import PipelineTiming
 from archex.reporting import compute_meta
 from archex.serve.compare import validate_dimensions
 from archex.utils import resolve_source
-
-if TYPE_CHECKING:
-    from archex.models import FileTreeEntry
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +39,7 @@ def handle_analyze_repo(repo_url: str, output_format: str = "json") -> str:
         output_format: Output format — 'json' or 'markdown'. Defaults to 'json'.
 
     Returns:
-        Serialized ArchProfile in the requested format.
+        JSON envelope with ArchProfile content and _meta efficiency block.
     """
     if output_format not in _SUPPORTED_FORMATS:
         raise ValueError(
@@ -46,10 +47,22 @@ def handle_analyze_repo(repo_url: str, output_format: str = "json") -> str:
         )
 
     source = resolve_source(repo_url)
-    profile = analyze(source)
-    if output_format == "markdown":
-        return profile.to_markdown()
-    return profile.to_json()
+    pt = PipelineTiming()
+    profile = analyze(source, timing=pt)
+
+    content = profile.to_markdown() if output_format == "markdown" else profile.to_json()
+
+    raw_tokens = get_repo_total_tokens(source)
+    meta = compute_meta(
+        tool_name="analyze_repo",
+        response_text=content,
+        raw_file_tokens=max(raw_tokens, 1),
+        strategy="full_analysis",
+        cached=pt.cached,
+        index_time_ms=pt.index_ms,
+        query_time_ms=pt.total_ms,
+    )
+    return json.dumps({"content": content, "_meta": meta.model_dump()}, indent=2)
 
 
 def handle_query_repo(repo_url: str, question: str, budget: int = 8000) -> str:
@@ -61,7 +74,7 @@ def handle_query_repo(repo_url: str, question: str, budget: int = 8000) -> str:
         budget: Maximum token budget for the returned context. Defaults to 8000.
 
     Returns:
-        XML-formatted ContextBundle ready for use as an LLM prompt.
+        JSON envelope with ContextBundle content and _meta efficiency block.
     """
     if not question.strip():
         raise ValueError("question must not be empty")
@@ -69,8 +82,22 @@ def handle_query_repo(repo_url: str, question: str, budget: int = 8000) -> str:
         raise ValueError(f"budget must be positive, got {budget}")
 
     source = resolve_source(repo_url)
-    bundle = query(source, question, token_budget=budget)
-    return bundle.to_prompt(format="xml")
+    pt = PipelineTiming()
+    bundle = query(source, question, token_budget=budget, timing=pt)
+
+    content = bundle.to_prompt(format="xml")
+    unique_files = list({c.chunk.file_path for c in bundle.chunks})
+    raw_tokens = get_files_token_count(source, unique_files)
+    meta = compute_meta(
+        tool_name="query_repo",
+        response_text=content,
+        raw_file_tokens=max(raw_tokens, 1),
+        strategy="bm25+graph",
+        cached=pt.cached,
+        index_time_ms=pt.index_ms,
+        query_time_ms=pt.total_ms,
+    )
+    return json.dumps({"content": content, "_meta": meta.model_dump()}, indent=2)
 
 
 def handle_compare_repos(
@@ -89,7 +116,7 @@ def handle_compare_repos(
             Defaults to 'api_surface,error_handling'.
 
     Returns:
-        JSON-serialized ComparisonResult.
+        JSON envelope with ComparisonResult content and _meta efficiency block.
     """
     dim_list = [d.strip() for d in dimensions.split(",") if d.strip()]
     if not dim_list:
@@ -98,50 +125,54 @@ def handle_compare_repos(
 
     source_a = resolve_source(repo_a)
     source_b = resolve_source(repo_b)
+    t0 = time.perf_counter()
     result = compare(source_a, source_b, dimensions=dim_list)
-    return result.model_dump_json(indent=2)
+    elapsed_ms = (time.perf_counter() - t0) * 1000
 
-
-def _sum_tree_lines(entries: list[FileTreeEntry]) -> int:
-    """Recursively sum line counts across all leaf files in a tree."""
-    total = 0
-    for entry in entries:
-        if entry.is_directory:
-            total += _sum_tree_lines(entry.children)
-        else:
-            total += entry.lines
-    return total
+    content = result.model_dump_json(indent=2)
+    raw_a = get_repo_total_tokens(source_a)
+    raw_b = get_repo_total_tokens(source_b)
+    meta = compute_meta(
+        tool_name="compare_repos",
+        response_text=content,
+        raw_file_tokens=max(raw_a + raw_b, 1),
+        strategy="full_comparison",
+        query_time_ms=elapsed_ms,
+    )
+    return json.dumps({"content": json.loads(content), "_meta": meta.model_dump()}, indent=2)
 
 
 def handle_get_file_tree(repo_url: str, max_depth: int = 5, language: str | None = None) -> str:
     source = resolve_source(repo_url)
-    t0 = time.perf_counter()
-    result = file_tree(source, max_depth=max_depth, language=language)
-    elapsed = (time.perf_counter() - t0) * 1000
+    pt = PipelineTiming()
+    result = file_tree(source, max_depth=max_depth, language=language, timing=pt)
     content = result.model_dump_json(indent=2)
-    raw_lines = _sum_tree_lines(result.entries)
+    raw_tokens = get_repo_total_tokens(source)
     meta = compute_meta(
         tool_name="get_file_tree",
         response_text=content,
-        raw_file_tokens=raw_lines * 10,
+        raw_file_tokens=max(raw_tokens, 1),
         strategy="file_tree",
-        query_time_ms=elapsed,
+        cached=pt.cached,
+        index_time_ms=pt.index_ms,
+        query_time_ms=pt.total_ms,
     )
     return json.dumps({"content": json.loads(content), "_meta": meta.model_dump()}, indent=2)
 
 
 def handle_get_file_outline(repo_url: str, file_path: str) -> str:
     source = resolve_source(repo_url)
-    t0 = time.perf_counter()
-    result = file_outline(source, file_path=file_path)
-    elapsed = (time.perf_counter() - t0) * 1000
+    pt = PipelineTiming()
+    result = file_outline(source, file_path=file_path, timing=pt)
     content = result.model_dump_json(indent=2)
     meta = compute_meta(
         tool_name="get_file_outline",
         response_text=content,
         raw_file_tokens=result.token_count_raw,
         strategy="file_outline",
-        query_time_ms=elapsed,
+        cached=pt.cached,
+        index_time_ms=pt.index_ms,
+        query_time_ms=pt.total_ms,
     )
     return json.dumps({"content": json.loads(content), "_meta": meta.model_dump()}, indent=2)
 
@@ -154,37 +185,42 @@ def handle_search_symbols(
     limit: int = 20,
 ) -> str:
     source = resolve_source(repo_url)
-    t0 = time.perf_counter()
-    matches = search_symbols(source, query=query_text, kind=kind, language=language, limit=limit)
-    elapsed = (time.perf_counter() - t0) * 1000
+    pt = PipelineTiming()
+    matches = search_symbols(
+        source, query=query_text, kind=kind, language=language, limit=limit, timing=pt
+    )
     match_data = [m.model_dump() for m in matches]
     content = json.dumps(match_data, indent=2)
-    unique_files = {m.file_path for m in matches}
-    raw_estimate = len(unique_files) * 5000
+    unique_files = list({m.file_path for m in matches})
+    raw_tokens = get_files_token_count(source, unique_files) if unique_files else 0
     meta = compute_meta(
         tool_name="search_symbols",
         response_text=content,
-        raw_file_tokens=raw_estimate,
+        raw_file_tokens=max(raw_tokens, 1),
         strategy="symbol_search",
-        query_time_ms=elapsed,
+        cached=pt.cached,
+        index_time_ms=pt.index_ms,
+        query_time_ms=pt.total_ms,
     )
     return json.dumps({"content": match_data, "_meta": meta.model_dump()}, indent=2)
 
 
 def handle_get_symbol(repo_url: str, symbol_id: str) -> str:
     source = resolve_source(repo_url)
-    t0 = time.perf_counter()
-    result = get_symbol(source, symbol_id=symbol_id)
-    elapsed = (time.perf_counter() - t0) * 1000
+    pt = PipelineTiming()
+    result = get_symbol(source, symbol_id=symbol_id, timing=pt)
     if result is None:
         return json.dumps({"error": "Symbol not found", "symbol_id": symbol_id})
     content = result.model_dump_json(indent=2)
+    raw_tokens = get_file_token_count(source, result.file_path)
     meta = compute_meta(
         tool_name="get_symbol",
         response_text=content,
-        raw_file_tokens=max(result.token_count * 5, 1),
+        raw_file_tokens=max(raw_tokens, 1),
         strategy="symbol_lookup",
-        query_time_ms=elapsed,
+        cached=pt.cached,
+        index_time_ms=pt.index_ms,
+        query_time_ms=pt.total_ms,
     )
     return json.dumps({"content": json.loads(content), "_meta": meta.model_dump()}, indent=2)
 
@@ -193,20 +229,20 @@ def handle_get_symbols_batch(repo_url: str, symbol_ids: list[str]) -> str:
     if len(symbol_ids) > 50:
         raise ValueError(f"symbol_ids must contain at most 50 entries, got {len(symbol_ids)}")
     source = resolve_source(repo_url)
-    t0 = time.perf_counter()
-    results = get_symbols_batch(source, symbol_ids=symbol_ids)
-    elapsed = (time.perf_counter() - t0) * 1000
+    pt = PipelineTiming()
+    results = get_symbols_batch(source, symbol_ids=symbol_ids, timing=pt)
     result_data = [s.model_dump() if s else None for s in results]
     content = json.dumps(result_data, indent=2)
-    unique_files = {s.file_path for s in results if s is not None}
-    raw_tokens = sum(s.token_count for s in results if s is not None)
-    raw_estimate = max(raw_tokens * 5, len(unique_files) * 5000)
+    unique_files = list({s.file_path for s in results if s is not None})
+    raw_tokens = get_files_token_count(source, unique_files) if unique_files else 0
     meta = compute_meta(
         tool_name="get_symbols_batch",
         response_text=content,
-        raw_file_tokens=raw_estimate,
+        raw_file_tokens=max(raw_tokens, 1),
         strategy="symbol_batch",
-        query_time_ms=elapsed,
+        cached=pt.cached,
+        index_time_ms=pt.index_ms,
+        query_time_ms=pt.total_ms,
     )
     return json.dumps({"content": result_data, "_meta": meta.model_dump()}, indent=2)
 
