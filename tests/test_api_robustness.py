@@ -15,7 +15,7 @@ def test_acquire_local_path_returns_noop_cleanup(tmp_path: Path) -> None:
     """Local path _acquire returns a no-op cleanup callable."""
     source = RepoSource(local_path=str(tmp_path))
     with patch("archex.api.open_local", return_value=tmp_path):
-        repo_path, url, local_path, cleanup = _acquire(source)
+        repo_path, url, local_path, cleanup, _head = _acquire(source)
 
     assert repo_path == tmp_path
     assert url is None
@@ -37,7 +37,7 @@ def test_acquire_url_cleanup_removes_tempdir() -> None:
 
     source = RepoSource(url="https://example.com/repo.git")
     with patch("archex.api.clone_repo", side_effect=fake_clone):
-        _repo_path, _url, _local_path, cleanup = _acquire(source)
+        _repo_path, _url, _local_path, cleanup, _head = _acquire(source)
 
     assert len(cloned_dir) == 1
     target = cloned_dir[0]
@@ -57,7 +57,7 @@ def test_acquire_url_cleanup_called_on_exception() -> None:
 
     source = RepoSource(url="https://example.com/repo.git")
     with patch("archex.api.clone_repo", side_effect=fake_clone):
-        _repo_path, _url, _local_path, cleanup = _acquire(source)
+        _repo_path, _url, _local_path, cleanup, _head = _acquire(source)
 
     target = _repo_path
     assert target.exists()
@@ -82,7 +82,7 @@ def test_acquire_local_path_cleanup_is_idempotent(tmp_path: Path) -> None:
     """Local path cleanup can be called multiple times without error."""
     source = RepoSource(local_path=str(tmp_path))
     with patch("archex.api.open_local", return_value=tmp_path):
-        _repo_path, _url, _local_path, cleanup = _acquire(source)
+        _repo_path, _url, _local_path, cleanup, _head = _acquire(source)
     cleanup()
     cleanup()  # second call should not raise
 
@@ -95,7 +95,7 @@ def test_acquire_url_cleanup_safe_on_missing_dir() -> None:
 
     source = RepoSource(url="https://example.com/repo.git")
     with patch("archex.api.clone_repo", side_effect=fake_clone):
-        _repo_path, _url, _local_path, cleanup = _acquire(source)
+        _repo_path, _url, _local_path, cleanup, _head = _acquire(source)
 
     # Dir was never actually created; cleanup with ignore_errors=True should not raise
     cleanup()
