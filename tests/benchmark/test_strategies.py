@@ -8,6 +8,8 @@ import pytest
 
 from archex.benchmark.models import BenchmarkTask, Strategy
 from archex.benchmark.strategies import (
+    compute_map,
+    compute_ndcg,
     compute_precision,
     compute_recall,
     count_file_tokens,
@@ -64,6 +66,64 @@ class TestComputePrecision:
 
     def test_empty_results(self) -> None:
         assert compute_precision(set(), ["a.py"]) == 0.0
+
+
+class TestComputeNdcg:
+    def test_perfect_ranking(self) -> None:
+        ranked = ["a.py", "b.py", "c.py"]
+        expected = ["a.py", "b.py"]
+        assert compute_ndcg(ranked, expected) == pytest.approx(1.0)
+
+    def test_worst_ranking(self) -> None:
+        ranked = ["x.py", "y.py", "z.py"]
+        expected = ["a.py", "b.py"]
+        assert compute_ndcg(ranked, expected) == 0.0
+
+    def test_partial_ranking(self) -> None:
+        ranked = ["x.py", "a.py", "b.py"]
+        expected = ["a.py", "b.py"]
+        result = compute_ndcg(ranked, expected)
+        assert 0.0 < result < 1.0
+
+    def test_empty_expected(self) -> None:
+        assert compute_ndcg(["a.py"], []) == 0.0
+
+    def test_empty_ranked(self) -> None:
+        assert compute_ndcg([], ["a.py"]) == 0.0
+
+    def test_k_parameter(self) -> None:
+        ranked = ["x.py"] * 20 + ["a.py"]
+        expected = ["a.py"]
+        # With k=10, "a.py" is beyond cutoff
+        assert compute_ndcg(ranked, expected, k=10) == 0.0
+        # With k=25, "a.py" is included
+        assert compute_ndcg(ranked, expected, k=25) > 0.0
+
+
+class TestComputeMap:
+    def test_perfect_ranking(self) -> None:
+        ranked = ["a.py", "b.py", "c.py"]
+        expected = ["a.py", "b.py"]
+        assert compute_map(ranked, expected) == pytest.approx(1.0)
+
+    def test_worst_ranking(self) -> None:
+        ranked = ["x.py", "y.py", "z.py"]
+        expected = ["a.py", "b.py"]
+        assert compute_map(ranked, expected) == 0.0
+
+    def test_partial_ranking(self) -> None:
+        # a.py at position 2: precision@2 = 1/2 = 0.5
+        # b.py at position 3: precision@3 = 2/3
+        # MAP = (0.5 + 2/3) / 2 = 7/12
+        ranked = ["x.py", "a.py", "b.py"]
+        expected = ["a.py", "b.py"]
+        assert compute_map(ranked, expected) == pytest.approx(7.0 / 12.0)
+
+    def test_empty_expected(self) -> None:
+        assert compute_map(["a.py"], []) == 0.0
+
+    def test_empty_ranked(self) -> None:
+        assert compute_map([], ["a.py"]) == 0.0
 
 
 class TestExtractKeywords:

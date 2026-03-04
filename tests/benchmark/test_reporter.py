@@ -3,7 +3,12 @@
 from __future__ import annotations
 
 from archex.benchmark.models import BenchmarkReport, BenchmarkResult, Strategy
-from archex.benchmark.reporter import format_json, format_markdown, format_summary
+from archex.benchmark.reporter import (
+    format_json,
+    format_markdown,
+    format_strategy_comparison,
+    format_summary,
+)
 
 
 def _make_result(
@@ -51,6 +56,8 @@ class TestFormatMarkdown:
     def test_contains_table_header(self) -> None:
         md = format_markdown(_make_report())
         assert "| Strategy |" in md
+        assert "nDCG" in md
+        assert "MAP" in md
 
     def test_contains_strategy_rows(self) -> None:
         md = format_markdown(_make_report())
@@ -92,6 +99,8 @@ class TestFormatSummary:
         assert "| Strategy |" in summary
         assert "raw_files" in summary
         assert "archex_query" in summary
+        assert "Avg nDCG" in summary
+        assert "Avg MAP" in summary
 
     def test_multi_report_aggregation(self) -> None:
         r1 = _make_report(
@@ -108,3 +117,26 @@ class TestFormatSummary:
         )
         summary = format_summary([r1, r2])
         assert "**Tasks:** 2" in summary
+
+
+class TestFormatStrategyComparison:
+    def test_empty_reports(self) -> None:
+        result = format_strategy_comparison([])
+        assert "No benchmark results" in result
+
+    def test_contains_per_task_table(self) -> None:
+        report = _make_report()
+        result = format_strategy_comparison([report])
+        assert "## test" in result
+        assert "raw_files" in result
+        assert "archex_query" in result
+
+    def test_contains_head_to_head(self) -> None:
+        report = _make_report()
+        result = format_strategy_comparison([report])
+        assert "Head-to-Head Wins" in result
+
+    def test_contains_best_strategy(self) -> None:
+        report = _make_report()
+        result = format_strategy_comparison([report])
+        assert "Best Strategy per Metric" in result
