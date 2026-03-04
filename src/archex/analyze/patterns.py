@@ -481,16 +481,29 @@ for _fn in [
     default_registry.register(_fn)
 
 
+PatternVerifier = Callable[["DetectedPattern", "list[ParsedFile]"], "float | None"]
+
+
 def detect_patterns(
     parsed_files: list[ParsedFile],
     graph: DependencyGraph,
     registry: PatternRegistry | None = None,
+    verifier: PatternVerifier | None = None,
 ) -> list[DetectedPattern]:
-    """Run all pattern detectors and return non-None results."""
+    """Run all pattern detectors and return non-None results.
+
+    When *verifier* is provided, each detected pattern is passed through it.
+    The verifier returns an adjusted confidence float, or ``None`` to keep the
+    original confidence unchanged.
+    """
     reg = registry or default_registry
     results: list[DetectedPattern] = []
     for detector in reg.detectors:
         pattern = detector(parsed_files, graph)
         if pattern is not None:
+            if verifier is not None:
+                adjusted = verifier(pattern, parsed_files)
+                if adjusted is not None:
+                    pattern = pattern.model_copy(update={"confidence": adjusted})
             results.append(pattern)
     return results
