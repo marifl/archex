@@ -141,15 +141,21 @@ class IndexConfig(BaseModel):
 
 
 class ScoringWeights(BaseModel):
-    relevance: float = 0.6
-    structural: float = 0.3
+    relevance: float = 0.5
+    structural: float = 0.25
     type_coverage: float = 0.1
+    cohesion: float = 0.15
 
     @model_validator(mode="after")
     def _weights_sum_to_one(self) -> ScoringWeights:
-        if self.relevance < 0 or self.structural < 0 or self.type_coverage < 0:
+        if (
+            self.relevance < 0
+            or self.structural < 0
+            or self.type_coverage < 0
+            or self.cohesion < 0
+        ):
             raise ValueError("Scoring weights must be non-negative")
-        total = self.relevance + self.structural + self.type_coverage
+        total = self.relevance + self.structural + self.type_coverage + self.cohesion
         if abs(total - 1.0) > 1e-6:
             raise ValueError(f"Scoring weights must sum to 1.0, got {total}")
         return self
@@ -515,6 +521,7 @@ class RankedChunk(BaseModel):
     relevance_score: float = 0.0
     structural_score: float = 0.0
     type_coverage_score: float = 0.0
+    cohesion_score: float = 0.0
     final_score: float = 0.0
 
 
@@ -526,6 +533,7 @@ class RetrievalMetadata(BaseModel):
     strategy: str = ""
     retrieval_time_ms: float = 0.0
     assembly_time_ms: float = 0.0
+    signal_agreement: float | None = None
 
 
 class ContextBundle(BaseModel):

@@ -96,7 +96,7 @@ class TestQueryEndToEnd:
 
     def test_query_with_custom_scoring_weights(self, python_simple_repo: Path) -> None:
         source = RepoSource(local_path=str(python_simple_repo))
-        weights = ScoringWeights(relevance=0.8, structural=0.1, type_coverage=0.1)
+        weights = ScoringWeights(relevance=0.8, structural=0.1, type_coverage=0.1, cohesion=0.0)
         bundle = query(
             source,
             "user model",
@@ -1191,7 +1191,7 @@ class TestErrorPathIntegration:
     def test_scoring_weights_invalid_at_construction(self) -> None:
         """Invalid ScoringWeights raise ValueError at construction time."""
         with pytest.raises(ValueError):
-            ScoringWeights(relevance=0.5, structural=0.5, type_coverage=0.5)
+            ScoringWeights(relevance=0.5, structural=0.5, type_coverage=0.5, cohesion=0.0)
 
 
 # ---------------------------------------------------------------------------
