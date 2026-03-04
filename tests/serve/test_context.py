@@ -221,3 +221,64 @@ def test_markdown_renderer_includes_chunk_header() -> None:
     bundle = _make_bundle()
     md = render_markdown(bundle)
     assert "authenticate" in md
+
+
+# ---------------------------------------------------------------------------
+# Edge case tests
+# ---------------------------------------------------------------------------
+
+
+def test_token_budget_zero_truncates_all() -> None:
+    """token_budget=0 includes no chunks, truncated=True."""
+    graph = DependencyGraph()
+    graph.add_file_node("a.py")
+    chunk = make_chunk("c1", "a.py", token_count=10)
+    results = [(chunk, 1.0)]
+    bundle = assemble_context(results, graph, [chunk], "q", token_budget=0)
+    assert bundle.chunks == []
+    assert bundle.truncated is True
+
+
+def test_all_chunks_exceed_budget_none_included() -> None:
+    """When every chunk exceeds the budget, none are included."""
+    graph = DependencyGraph()
+    graph.add_file_node("a.py")
+    chunks = [make_chunk(f"c{i}", "a.py", token_count=1000) for i in range(3)]
+    results = [(c, float(i + 1)) for i, c in enumerate(chunks)]
+    bundle = assemble_context(results, graph, chunks, "q", token_budget=100)
+    assert bundle.chunks == []
+    assert bundle.truncated is True
+
+
+def test_estimate_tokens_fallback_on_zero_count() -> None:
+    """_estimate_tokens uses word-based fallback when token_count is 0."""
+    from archex.serve.context import _estimate_tokens
+
+    chunk = make_chunk("c1", "a.py", content="hello world foo bar", token_count=0)
+    estimate = _estimate_tokens(chunk)
+    # 4 words * 1.3 ≈ 5
+    assert estimate > 0
+    assert estimate == int(4 * 1.3)
+
+
+def test_graph_with_isolated_nodes_no_expansion() -> None:
+    """Graph with isolated nodes (no edges) produces no structural expansion."""
+    graph = DependencyGraph()
+    graph.add_file_node("a.py")
+    graph.add_file_node("b.py")
+    # No edges between nodes
+    chunk_a = make_chunk("ca", "a.py", token_count=10)
+    chunk_b = make_chunk("cb", "b.py", token_count=10)
+    results = [(chunk_a, 1.0)]
+    bundle = assemble_context(results, graph, [chunk_a, chunk_b], "q", token_budget=1000)
+    # b.py should NOT be included since there's no edge from a.py to b.py
+    included_files = {rc.chunk.file_path for rc in bundle.chunks}
+    assert "b.py" not in included_files
+
+
+def test_empty_search_and_vector_results() -> None:
+    """Both empty search_results and empty vector_results return empty bundle."""
+    graph = DependencyGraph()
+    bundle = assemble_context([], graph, [], "q", token_budget=1000, vector_results=[])
+    assert bundle.chunks == []
+    assert bundle.token_count == 0
