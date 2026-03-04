@@ -1033,3 +1033,179 @@ class TestPluginBootstrapLifecycle:
 
         reg.load_entry_points(strict=True)
         assert reg._entry_points_strict is True  # pyright: ignore[reportPrivateUsage]
+
+
+# ---------------------------------------------------------------------------
+# Cross-language integration tests
+# ---------------------------------------------------------------------------
+
+
+class TestTypescriptIntegration:
+    """Analyze and query a TypeScript repository."""
+
+    def test_analyze_typescript(self, typescript_simple_repo: Path) -> None:
+        source = RepoSource(local_path=str(typescript_simple_repo))
+        profile = analyze(source, Config(cache=False))
+        assert profile.repo.total_files > 0
+        assert "typescript" in profile.repo.languages
+
+    def test_query_typescript(self, typescript_simple_repo: Path) -> None:
+        source = RepoSource(local_path=str(typescript_simple_repo))
+        bundle = query(source, "handlers", config=Config(cache=False))
+        assert isinstance(bundle, ContextBundle)
+
+
+class TestRustIntegration:
+    """Analyze and query a Rust repository."""
+
+    def test_analyze_rust(self, rust_simple_repo: Path) -> None:
+        source = RepoSource(local_path=str(rust_simple_repo))
+        profile = analyze(source, Config(cache=False))
+        assert profile.repo.total_files > 0
+        assert "rust" in profile.repo.languages
+
+    def test_query_rust(self, rust_simple_repo: Path) -> None:
+        source = RepoSource(local_path=str(rust_simple_repo))
+        bundle = query(source, "functions", config=Config(cache=False))
+        assert isinstance(bundle, ContextBundle)
+
+
+class TestGoIntegration:
+    """Analyze and query a Go repository."""
+
+    def test_analyze_go(self, go_simple_repo: Path) -> None:
+        source = RepoSource(local_path=str(go_simple_repo))
+        profile = analyze(source, Config(cache=False))
+        assert profile.repo.total_files > 0
+        assert "go" in profile.repo.languages
+
+    def test_query_go(self, go_simple_repo: Path) -> None:
+        source = RepoSource(local_path=str(go_simple_repo))
+        bundle = query(source, "main", config=Config(cache=False))
+        assert isinstance(bundle, ContextBundle)
+
+
+class TestMonorepoIntegration:
+    """Analyze and query a multi-language monorepo."""
+
+    def test_analyze_monorepo(self, monorepo_simple_repo: Path) -> None:
+        source = RepoSource(local_path=str(monorepo_simple_repo))
+        profile = analyze(source, Config(cache=False))
+        assert profile.repo.total_files > 0
+        assert len(profile.repo.languages) >= 1
+
+    def test_query_monorepo(self, monorepo_simple_repo: Path) -> None:
+        source = RepoSource(local_path=str(monorepo_simple_repo))
+        bundle = query(source, "core", config=Config(cache=False))
+        assert isinstance(bundle, ContextBundle)
+
+
+# ---------------------------------------------------------------------------
+# Error path integration tests
+# ---------------------------------------------------------------------------
+
+
+class TestErrorPathIntegration:
+    def test_query_nonexistent_local_path(self, tmp_path: Path) -> None:
+        """Querying a nonexistent path raises an appropriate error."""
+        source = RepoSource(local_path=str(tmp_path / "nonexistent"))
+        with pytest.raises((FileNotFoundError, OSError, Exception)):
+            query(source, "anything", config=Config(cache=False))
+
+    def test_analyze_empty_repo(self, tmp_path: Path) -> None:
+        """Analyzing an empty directory produces a profile with 0 files."""
+        import subprocess
+
+        subprocess.run(["git", "init", str(tmp_path)], check=True, capture_output=True)
+        subprocess.run(
+            ["git", "-C", str(tmp_path), "config", "user.email", "test@test.com"],
+            check=True,
+            capture_output=True,
+        )
+        subprocess.run(
+            ["git", "-C", str(tmp_path), "config", "user.name", "test"],
+            check=True,
+            capture_output=True,
+        )
+        (tmp_path / ".gitkeep").touch()
+        subprocess.run(
+            ["git", "-C", str(tmp_path), "add", "."], check=True, capture_output=True
+        )
+        subprocess.run(
+            ["git", "-C", str(tmp_path), "commit", "-m", "init"],
+            check=True,
+            capture_output=True,
+        )
+        (tmp_path / ".gitkeep").unlink()
+        subprocess.run(
+            ["git", "-C", str(tmp_path), "add", "."], check=True, capture_output=True
+        )
+        subprocess.run(
+            ["git", "-C", str(tmp_path), "commit", "-m", "empty"],
+            check=True,
+            capture_output=True,
+        )
+
+        source = RepoSource(local_path=str(tmp_path))
+        profile = analyze(source, Config(cache=False))
+        assert profile.repo.total_files == 0
+
+    def test_query_empty_repo(self, tmp_path: Path) -> None:
+        """Querying an empty repo returns an empty bundle without crash."""
+        import subprocess
+
+        subprocess.run(["git", "init", str(tmp_path)], check=True, capture_output=True)
+        subprocess.run(
+            ["git", "-C", str(tmp_path), "config", "user.email", "test@test.com"],
+            check=True,
+            capture_output=True,
+        )
+        subprocess.run(
+            ["git", "-C", str(tmp_path), "config", "user.name", "test"],
+            check=True,
+            capture_output=True,
+        )
+        (tmp_path / ".gitkeep").touch()
+        subprocess.run(
+            ["git", "-C", str(tmp_path), "add", "."], check=True, capture_output=True
+        )
+        subprocess.run(
+            ["git", "-C", str(tmp_path), "commit", "-m", "init"],
+            check=True,
+            capture_output=True,
+        )
+        (tmp_path / ".gitkeep").unlink()
+        subprocess.run(
+            ["git", "-C", str(tmp_path), "add", "."], check=True, capture_output=True
+        )
+        subprocess.run(
+            ["git", "-C", str(tmp_path), "commit", "-m", "empty"],
+            check=True,
+            capture_output=True,
+        )
+
+        source = RepoSource(local_path=str(tmp_path))
+        bundle = query(source, "anything", config=Config(cache=False))
+        assert bundle.chunks == []
+
+    def test_scoring_weights_invalid_at_construction(self) -> None:
+        """Invalid ScoringWeights raise ValueError at construction time."""
+        with pytest.raises(ValueError):
+            ScoringWeights(relevance=0.5, structural=0.5, type_coverage=0.5)
+
+
+# ---------------------------------------------------------------------------
+# PipelineTiming integration tests
+# ---------------------------------------------------------------------------
+
+
+class TestPipelineTimingIntegration:
+    def test_timing_all_fields_populated(self, python_simple_repo: Path) -> None:
+        """After full pipeline, all timing fields are populated."""
+        source = RepoSource(local_path=str(python_simple_repo))
+        timing = PipelineTiming()
+        query(source, "auth", config=Config(cache=False), timing=timing)
+        assert timing.total_ms is not None
+        assert timing.total_ms > 0
+        assert timing.acquire_ms is not None
+        assert timing.parse_ms is not None
