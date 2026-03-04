@@ -90,6 +90,10 @@ class RepoSource(BaseModel):
 
     @model_validator(mode="after")
     def _require_source(self) -> RepoSource:
+        if self.url is not None and not self.url.strip():
+            raise ValueError("url must not be empty")
+        if self.local_path is not None and not self.local_path.strip():
+            raise ValueError("local_path must not be empty")
         if not self.url and not self.local_path:
             raise ValueError("RepoSource requires either 'url' or 'local_path'")
         return self
@@ -108,6 +112,14 @@ class Config(BaseModel):
     strict: bool = False
     delta_threshold: float = 0.5
 
+    @model_validator(mode="after")
+    def _validate_config(self) -> Config:
+        if self.max_file_size <= 0:
+            raise ValueError("max_file_size must be > 0")
+        if self.delta_threshold < 0.0 or self.delta_threshold > 1.0:
+            raise ValueError("delta_threshold must be between 0.0 and 1.0")
+        return self
+
 
 class IndexConfig(BaseModel):
     bm25: bool = True
@@ -117,6 +129,16 @@ class IndexConfig(BaseModel):
     chunk_min_tokens: int = 50
     token_encoding: str = "cl100k_base"
 
+    @model_validator(mode="after")
+    def _validate_index_config(self) -> IndexConfig:
+        if self.chunk_max_tokens <= 0:
+            raise ValueError("chunk_max_tokens must be > 0")
+        if self.chunk_min_tokens < 0:
+            raise ValueError("chunk_min_tokens must be >= 0")
+        if self.chunk_min_tokens > self.chunk_max_tokens:
+            raise ValueError("chunk_min_tokens must be <= chunk_max_tokens")
+        return self
+
 
 class ScoringWeights(BaseModel):
     relevance: float = 0.6
@@ -125,6 +147,8 @@ class ScoringWeights(BaseModel):
 
     @model_validator(mode="after")
     def _weights_sum_to_one(self) -> ScoringWeights:
+        if self.relevance < 0 or self.structural < 0 or self.type_coverage < 0:
+            raise ValueError("Scoring weights must be non-negative")
         total = self.relevance + self.structural + self.type_coverage
         if abs(total - 1.0) > 1e-6:
             raise ValueError(f"Scoring weights must sum to 1.0, got {total}")
