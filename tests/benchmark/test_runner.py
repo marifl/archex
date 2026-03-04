@@ -140,12 +140,12 @@ class TestRunBenchmark:
         self,
         fixture_task: tuple[BenchmarkTask, Path],
     ) -> None:
-        """A strategy missing from STRATEGY_RUNNERS is logged and skipped."""
-        from archex.benchmark.strategies import STRATEGY_RUNNERS
+        """A strategy missing from the registry is logged and skipped."""
+        from archex.benchmark.strategies import default_strategy_registry
 
         task, repo_path = fixture_task
-        # Temporarily remove RAW_GREPPED from the dispatch dict
-        removed = STRATEGY_RUNNERS.pop(Strategy.RAW_GREPPED)
+        key = Strategy.RAW_GREPPED.value
+        removed = default_strategy_registry._runners.pop(key)
         try:
             report = run_benchmark(
                 task,
@@ -153,7 +153,7 @@ class TestRunBenchmark:
                 repo_path=repo_path,
             )
         finally:
-            STRATEGY_RUNNERS[Strategy.RAW_GREPPED] = removed
+            default_strategy_registry._runners[key] = removed
 
         # RAW_GREPPED was skipped; only RAW_FILES ran
         assert len(report.results) == 1

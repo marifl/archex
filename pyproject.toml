@@ -64,6 +64,12 @@ archex = "archex.cli.main:cli"
 [project.entry-points."archex.pattern_detectors"]
 # Example: my_pattern = "mypackage.patterns:detect_my_pattern"
 
+[project.entry-points."archex.benchmark_strategies"]
+# Example: custom_strategy = "mypackage.strategies:run_custom"
+
+[project.entry-points."archex.embedders"]
+# Example: custom_embedder = "mypackage.embedders:my_embedder_factory"
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
