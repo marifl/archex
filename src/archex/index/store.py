@@ -136,7 +136,9 @@ class IndexStore:
             CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts USING fts5(
                 chunk_id UNINDEXED,
                 content,
-                symbol_name
+                symbol_name,
+                file_path,
+                tokenize='porter unicode61'
             );
         """)
         self._conn.commit()
