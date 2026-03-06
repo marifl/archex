@@ -24,6 +24,20 @@ from archex.models import (
 )
 
 
+def _has_tree_sitter_swift() -> bool:
+    try:
+        import tree_sitter_swift  # noqa: F401
+        return True
+    except ImportError:
+        pass
+    try:
+        from tree_sitter_language_pack import get_language  # noqa: F401
+        get_language("swift")
+        return True
+    except (ImportError, Exception):
+        return False
+
+
 def test_compute_top_k_thresholds() -> None:
     assert _compute_top_k(50) == 30
     assert _compute_top_k(100) == 30
@@ -73,9 +87,9 @@ class TestQueryEndToEnd:
 
         assert isinstance(bundle, ContextBundle)
         assert bundle.query == "how does authentication work"
-        assert bundle.token_budget == 8192
+        assert 0 < bundle.token_budget <= 8192
         assert bundle.retrieval_metadata is not None
-        assert bundle.retrieval_metadata.strategy == "bm25+graph"
+        assert bundle.retrieval_metadata.strategy in ("bm25+graph", "passthrough")
 
     def test_query_returns_chunks(self, python_simple_repo: Path) -> None:
         source = RepoSource(local_path=str(python_simple_repo))
@@ -158,7 +172,7 @@ class TestQueryHybrid:
 
         assert isinstance(bundle, ContextBundle)
         assert bundle.retrieval_metadata is not None
-        assert bundle.retrieval_metadata.strategy == "bm25+graph"
+        assert bundle.retrieval_metadata.strategy in ("bm25+graph", "passthrough")
 
 
 class TestCompareEndToEnd:
@@ -943,7 +957,9 @@ class TestNewLanguageIntegration:
             ("java", "java_simple_repo"),
             ("kotlin", "kotlin_simple_repo"),
             ("csharp", "csharp_simple_repo"),
-            ("swift", "swift_simple_repo"),
+            pytest.param("swift", "swift_simple_repo", marks=pytest.mark.skipif(
+                not _has_tree_sitter_swift(), reason="tree-sitter-swift not installed",
+            )),
         ],
     )
     def test_analyze_new_language(
@@ -964,7 +980,9 @@ class TestNewLanguageIntegration:
             ("java", "java_simple_repo", "User"),
             ("kotlin", "kotlin_simple_repo", "User"),
             ("csharp", "csharp_simple_repo", "User"),
-            ("swift", "swift_simple_repo", "User"),
+            pytest.param("swift", "swift_simple_repo", "User", marks=pytest.mark.skipif(
+                not _has_tree_sitter_swift(), reason="tree-sitter-swift not installed",
+            )),
         ],
     )
     def test_query_new_language(

@@ -420,7 +420,7 @@ def test_isolated_node_unaffected_by_propagation() -> None:
 
 
 def test_high_relevance_low_centrality_beats_low_relevance_high_centrality() -> None:
-    """With new weights (relevance=0.6), BM25 signal dominates over structural centrality."""
+    """With relevance-dominant weights, BM25 signal dominates over structural centrality."""
     graph = DependencyGraph()
     graph.add_file_node("hub.py")
     graph.add_file_node("leaf.py")
