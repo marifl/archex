@@ -24,6 +24,12 @@ __all__ = [
 ]
 
 
+def _fastembed_factory() -> Embedder:
+    from archex.index.embeddings.fast import FastEmbedder
+
+    return FastEmbedder()
+
+
 def _nomic_factory() -> Embedder:
     from archex.index.embeddings.nomic import NomicCodeEmbedder
 
@@ -90,5 +96,6 @@ class EmbedderRegistry:
 
 
 default_embedder_registry = EmbedderRegistry()
+default_embedder_registry.register("fastembed", _fastembed_factory)
 default_embedder_registry.register("nomic", _nomic_factory)
 default_embedder_registry.register("sentence_transformers", _sentence_tf_factory)
