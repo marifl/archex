@@ -328,6 +328,12 @@ _PATH_NOISE = frozenset({
 
 _STEM_SUFFIXES = ("ors", "ers", "ing", "tion", "ment", "ness", "ity", "ies", "ous")
 
+_SYMBOL_NOISE = _PATH_NOISE | frozenset({
+    "implement", "show", "find", "look", "search", "describe", "explain",
+    "this", "that", "with", "from", "into", "have", "been", "does",
+    "where", "which", "when", "will", "also", "each", "some",
+})
+
 
 def _extract_path_terms(question: str) -> list[str]:
     """Extract terms from a query that might match file/directory names.
@@ -388,6 +394,63 @@ def _file_path_boost(
                 return boosted
 
     return boosted
+
+
+def _symbol_search_seeds(
+    store: IndexStore,
+    question: str,
+    max_bm25_score: float = 1.0,
+    max_symbol_chunks: int = 20,
+) -> list[tuple[CodeChunk, float]]:
+    """Find chunks by matching query terms against symbol names via FTS5.
+
+    Symbol matches are high-confidence seeds — they represent exact structural
+    hits (like an LSP "go to definition"). Only keeps results where the
+    symbol_name or qualified_name actually contains the search term (ignoring
+    file_path-only matches which are noise).
+
+    Boost score is 1.2× max BM25 so symbol-matched chunks rank above pure
+    keyword hits.
+    """
+    import re
+
+    words = re.findall(r"[a-zA-Z_][a-zA-Z0-9_]{2,}", question)
+    filtered = [
+        w.lower()
+        for w in words
+        if w.lower() not in _SYMBOL_NOISE and len(w) >= 3
+    ]
+    # Generate snake_case combinations of adjacent terms
+    # e.g. "field validators" → "field_validator", "field_validators"
+    bigrams: list[str] = []
+    for i in range(len(filtered) - 1):
+        bigrams.append(f"{filtered[i]}_{filtered[i + 1]}")
+    # Only use bigrams (specific) and long single terms (>= 6 chars, less generic)
+    terms = bigrams + [t for t in filtered if len(t) >= 6]
+
+    seen: set[str] = set()
+    seeds: list[tuple[CodeChunk, float]] = []
+    # Low boost — just enough to become a seed file for import expansion.
+    # The real value is getting their files into seed_files, not competing
+    # for top file slots directly.
+    boost_score = max_bm25_score * 0.15
+
+    for term in terms:
+        chunks = store.search_symbols(term, limit=20)
+        for chunk in chunks:
+            # Only keep if symbol_name or qualified_name actually matches the term
+            # (file_path-only matches from FTS5 are noise)
+            name_lower = (chunk.symbol_name or "").lower()
+            qname_lower = (chunk.qualified_name or "").lower()
+            if term not in name_lower and term not in qname_lower:
+                continue
+            if chunk.id not in seen:
+                seen.add(chunk.id)
+                seeds.append((chunk, boost_score))
+            if len(seeds) >= max_symbol_chunks:
+                return seeds
+
+    return seeds
 
 
 def _compute_dynamic_budget(total_repo_tokens: int, user_budget: int) -> int:
@@ -579,7 +642,13 @@ def query(
                 bm25_ids = {c.id for c, _ in search_results}
                 max_bm25 = max((s for _, s in search_results), default=1.0)
                 path_boost = _file_path_boost(store, question, bm25_ids, max_bm25_score=max_bm25)
-                search_results = search_results + path_boost
+                # Symbol seeds: add matched files as expansion seeds (low boost)
+                all_existing = bm25_ids | {c.id for c, _ in path_boost}
+                symbol_seeds = [
+                    (c, s) for c, s in _symbol_search_seeds(store, question, max_bm25_score=max_bm25)
+                    if c.id not in all_existing
+                ]
+                search_results = search_results + path_boost + symbol_seeds
 
                 # Two-stage: rerank BM25 candidates with vector similarity
                 vector_results: list[tuple[object, float]] | None = None
@@ -693,7 +762,13 @@ def query(
             bm25_ids = {c.id for c, _ in search_results}
             max_bm25 = max((s for _, s in search_results), default=1.0)
             path_boost = _file_path_boost(store, question, bm25_ids, max_bm25_score=max_bm25)
-            search_results = search_results + path_boost
+            # Symbol seeds: add matched files as expansion seeds (low boost)
+            all_existing_miss = bm25_ids | {c.id for c, _ in path_boost}
+            symbol_seeds_miss = [
+                (c, s) for c, s in _symbol_search_seeds(store, question, max_bm25_score=max_bm25)
+                if c.id not in all_existing_miss
+            ]
+            search_results = search_results + path_boost + symbol_seeds_miss
 
             # Two-stage: rerank BM25 candidates with vector similarity
             vector_results_miss: list[tuple[object, float]] | None = None
