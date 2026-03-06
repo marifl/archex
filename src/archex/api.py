@@ -50,7 +50,7 @@ from archex.parse import (
 from archex.parse.adapters import LanguageAdapter, default_adapter_registry
 from archex.providers.base import get_provider
 from archex.serve.compare import compare_repos
-from archex.serve.context import assemble_context
+from archex.serve.context import assemble_context, passthrough_context
 from archex.serve.profile import build_profile
 
 if TYPE_CHECKING:
@@ -319,6 +319,104 @@ def _compute_top_k(total_chunks: int) -> int:
     return 150
 
 
+_PATH_NOISE = frozenset({
+    "how", "does", "implement", "what", "handle", "manage", "function",
+    "method", "class", "module", "file", "code", "work", "used", "using",
+    "create", "make", "define", "call", "return", "type", "data", "value",
+})
+
+
+_STEM_SUFFIXES = ("ors", "ers", "ing", "tion", "ment", "ness", "ity", "ies", "ous")
+
+
+def _extract_path_terms(question: str) -> list[str]:
+    """Extract terms from a query that might match file/directory names.
+
+    Returns terms sorted longest-first so more specific terms (e.g. "validators")
+    get priority over generic ones (e.g. "pydantic") when the boost limit is hit.
+    Also generates stem variants by stripping common suffixes (e.g. "validators"
+    → "validat") to match related file names like "_validate_call.py".
+    """
+    import re
+
+    words = re.findall(r"[a-zA-Z_][a-zA-Z0-9_]{3,}", question)
+    raw = [
+        w.lower()
+        for w in words
+        if w.lower() not in _PATH_NOISE and len(w) >= 4
+    ]
+    seen: set[str] = set()
+    terms: list[str] = []
+    for t in raw:
+        if t not in seen:
+            seen.add(t)
+            terms.append(t)
+        for suffix in _STEM_SUFFIXES:
+            if t.endswith(suffix) and len(t) - len(suffix) >= 4:
+                stem = t[: -len(suffix)]
+                if stem not in seen:
+                    seen.add(stem)
+                    terms.append(stem)
+    terms.sort(key=len, reverse=True)
+    return terms
+
+
+def _file_path_boost(
+    store: IndexStore,
+    question: str,
+    existing_ids: set[str],
+    max_bm25_score: float = 1.0,
+    max_boost_chunks: int = 30,
+) -> list[tuple[CodeChunk, float]]:
+    """Find chunks whose file_path contains query terms as exact substrings.
+
+    Terms are searched longest-first (from _extract_path_terms) so specific terms
+    like "validators" get priority over generic ones like "pydantic". Boost score
+    is 0.5× max BM25 so path-matched chunks compete without dominating.
+    """
+    terms = _extract_path_terms(question)
+    boosted: list[tuple[CodeChunk, float]] = []
+    seen: set[str] = set(existing_ids)
+    boost_score = max_bm25_score * 0.5
+
+    for term in terms:
+        for chunk in store.search_chunks_by_path_keyword(term, limit=20):
+            if chunk.id not in seen:
+                seen.add(chunk.id)
+                boosted.append((chunk, boost_score))
+            if len(boosted) >= max_boost_chunks:
+                return boosted
+
+    return boosted
+
+
+def _compute_dynamic_budget(total_repo_tokens: int, user_budget: int) -> int:
+    """Scale token budget proportional to repo size.
+
+    - total ≤ budget: return total (passthrough — everything fits)
+    - budget < total ≤ 3× budget: linear ramp from total down to budget
+    - total > 3× budget: return user_budget (full retrieval mode)
+
+    This prevents noise inflation on small repos while preserving full
+    retrieval capacity for large ones.
+    """
+    if total_repo_tokens <= user_budget:
+        return total_repo_tokens
+    cap = user_budget * 3
+    if total_repo_tokens >= cap:
+        return user_budget
+    # Linear interpolation: at 1× → total_repo_tokens, at 3× → user_budget
+    t = (total_repo_tokens - user_budget) / (cap - user_budget)
+    return int(total_repo_tokens * (1.0 - t) + user_budget * t)
+
+
+def _total_chunk_tokens(chunks: list[CodeChunk]) -> int:
+    """Sum estimated tokens across all chunks."""
+    from archex.serve.context import _estimate_tokens
+
+    return sum(_estimate_tokens(c) for c in chunks)
+
+
 def analyze(
     source: RepoSource,
     config: Config | None = None,
@@ -453,35 +551,43 @@ def query(
             try:
                 if timing is not None:
                     timing.cached = True
-                bm25 = BM25Index(store)
                 cached_chunks = store.get_chunks()
+                total_repo_tokens = _total_chunk_tokens(cached_chunks)
+                effective_budget = _compute_dynamic_budget(total_repo_tokens, token_budget)
+
+                # Passthrough: entire repo fits within budget
+                if effective_budget >= total_repo_tokens:
+                    pt = passthrough_context(cached_chunks, question, effective_budget)
+                    if timing is not None:
+                        timing.strategy = "passthrough"
+                    pt.retrieval_metadata.retrieval_time_ms = _elapsed_ms(t0)
+                    logger.info("query() [passthrough] completed in %.0fms", _elapsed_ms(t0))
+                    if timing is not None:
+                        timing.total_ms = _elapsed_ms(t0)
+                    return pt
+
+                bm25 = BM25Index(store)
                 if cached_chunks:
                     bm25.build(cached_chunks)
                 stored_edges = store.get_edges()
                 graph = DependencyGraph.from_edges(stored_edges)
 
                 top_k = _compute_top_k(len(cached_chunks))
-                vector_results: list[tuple[object, float]] | None = None
-                if index_config.vector:
-                    vec_path = cache.vector_path(cache_key)
-                    if vec_path.exists():
-                        from archex.index.vector import VectorIndex
-
-                        vec_idx = VectorIndex()
-                        vec_idx.load(
-                            vec_path,
-                            cached_chunks,
-                            embedder_name=index_config.embedder or "",
-                            vector_dim=0,
-                        )
-                        embedder = _get_embedder(index_config)
-                        if embedder is not None:
-                            vector_results = vec_idx.search(question, embedder, top_k=top_k)  # type: ignore[assignment]
-                            if timing is not None:
-                                timing.vector_used = True
-
                 t_search = time.perf_counter()
                 search_results = bm25.search(question, top_k=top_k)
+                # Supplement with file-path keyword matches
+                bm25_ids = {c.id for c, _ in search_results}
+                max_bm25 = max((s for _, s in search_results), default=1.0)
+                path_boost = _file_path_boost(store, question, bm25_ids, max_bm25_score=max_bm25)
+                search_results = search_results + path_boost
+
+                # Two-stage: rerank BM25 candidates with vector similarity
+                vector_results: list[tuple[object, float]] | None = None
+                if index_config.vector:
+                    vector_results = _two_stage_rerank(
+                        question, search_results, index_config, timing,
+                    )
+
                 if timing is not None:
                     timing.search_ms = _elapsed_ms(t_search)
                 bundle = assemble_context(
@@ -489,7 +595,7 @@ def query(
                     graph=graph,
                     all_chunks=cached_chunks,
                     question=question,
-                    token_budget=token_budget,
+                    token_budget=effective_budget,
                     vector_results=vector_results,  # type: ignore[arg-type]
                     scoring_weights=scoring_weights,
                 )
@@ -545,6 +651,9 @@ def query(
         all_chunks = file_chunker.chunk_files(parsed_files, sources)
         logger.info("Chunked into %d chunks in %.0fms", len(all_chunks), _elapsed_ms(t4))
 
+        total_repo_tokens = _total_chunk_tokens(all_chunks)
+        effective_budget = _compute_dynamic_budget(total_repo_tokens, token_budget)
+
         db_path = Path(tempfile.mkdtemp()) / "index.db"
         store = IndexStore(db_path)
 
@@ -557,28 +666,7 @@ def query(
             if timing is not None:
                 timing.index_ms = _elapsed_ms(t4)
 
-            # Build vector index if configured
-            vector_results_miss: list[tuple[object, float]] | None = None
             top_k = _compute_top_k(len(all_chunks))
-            if index_config.vector:
-                embedder = _get_embedder(index_config)
-                if embedder is not None:
-                    from archex.index.vector import VectorIndex
-
-                    t5 = time.perf_counter()
-                    vec_idx = VectorIndex()
-                    vec_idx.build(all_chunks, embedder)  # type: ignore[arg-type]
-                    vector_results_miss = vec_idx.search(question, embedder, top_k=top_k)  # type: ignore[assignment]
-                    if timing is not None:
-                        timing.vector_used = True
-                    logger.info("Vector index built in %.0fms", _elapsed_ms(t5))
-
-                    if config.cache:
-                        vec_idx.save(
-                            cache.vector_path(cache_key),
-                            embedder_name=index_config.embedder or "",
-                            vector_dim=vec_idx.dim,
-                        )
 
             if config.cache:
                 commit = cloned_head or cache.git_head(source.local_path) or source.commit or ""
@@ -589,8 +677,31 @@ def query(
                 store.conn.execute("PRAGMA wal_checkpoint(FULL)")
                 cache.put(cache_key, db_path)
 
+            # Passthrough: entire repo fits within budget
+            if effective_budget >= total_repo_tokens:
+                pt = passthrough_context(all_chunks, question, effective_budget)
+                if timing is not None:
+                    timing.strategy = "passthrough"
+                    timing.total_ms = _elapsed_ms(t0)
+                pt.retrieval_metadata.retrieval_time_ms = _elapsed_ms(t0)
+                logger.info("query() [passthrough] completed in %.0fms", _elapsed_ms(t0))
+                return pt
+
             t6 = time.perf_counter()
             search_results = bm25.search(question, top_k=top_k)
+            # Supplement with file-path keyword matches
+            bm25_ids = {c.id for c, _ in search_results}
+            max_bm25 = max((s for _, s in search_results), default=1.0)
+            path_boost = _file_path_boost(store, question, bm25_ids, max_bm25_score=max_bm25)
+            search_results = search_results + path_boost
+
+            # Two-stage: rerank BM25 candidates with vector similarity
+            vector_results_miss: list[tuple[object, float]] | None = None
+            if index_config.vector:
+                vector_results_miss = _two_stage_rerank(
+                    question, search_results, index_config, timing,
+                )
+
             if timing is not None:
                 timing.search_ms = _elapsed_ms(t6)
             bundle = assemble_context(
@@ -598,7 +709,7 @@ def query(
                 graph=graph,
                 all_chunks=all_chunks,
                 question=question,
-                token_budget=token_budget,
+                token_budget=effective_budget,
                 vector_results=vector_results_miss,  # type: ignore[arg-type]
                 scoring_weights=scoring_weights,
             )
@@ -615,6 +726,38 @@ def query(
         return bundle
     finally:
         cleanup()
+
+
+_RERANK_MAX_CANDIDATES = 50
+
+
+def _two_stage_rerank(
+    question: str,
+    bm25_results: list[tuple[CodeChunk, float]],
+    index_config: IndexConfig,
+    timing: PipelineTiming | None,
+) -> list[tuple[CodeChunk, float]] | None:
+    """Rerank BM25 candidates using vector similarity (two-stage retrieval).
+
+    Embeds only the top BM25 candidate chunks + query instead of the full corpus.
+    Caps at _RERANK_MAX_CANDIDATES to bound embedding latency.
+    """
+    embedder = _get_embedder(index_config)
+    if embedder is None:
+        return None
+
+    from archex.index.vector import VectorIndex
+
+    candidates = [chunk for chunk, _ in bm25_results[:_RERANK_MAX_CANDIDATES]]
+    t_vec = time.perf_counter()
+    vec_idx = VectorIndex()
+    vector_results = vec_idx.rerank(question, candidates, embedder)  # type: ignore[arg-type]
+    rerank_ms = _elapsed_ms(t_vec)
+    if timing is not None:
+        timing.vector_used = True
+        timing.vector_build_ms = rerank_ms
+    logger.info("Two-stage rerank (%d candidates) in %.0fms", len(candidates), rerank_ms)
+    return vector_results  # type: ignore[return-value]
 
 
 def _get_embedder(index_config: IndexConfig) -> object | None:
