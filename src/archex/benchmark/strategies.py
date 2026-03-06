@@ -416,8 +416,8 @@ def run_archex_query_hybrid(task: BenchmarkTask, repo_path: Path) -> BenchmarkRe
     t0 = time.perf_counter()
     timing = PipelineTiming()
     source = RepoSource(local_path=str(repo_path))
-    config = Config(cache=False)
-    index_config = IndexConfig(vector=True, embedder="nomic")
+    config = Config(cache=False, languages=task.languages)
+    index_config = IndexConfig(vector=True, embedder="fastembed")
 
     bundle = query(
         source,
