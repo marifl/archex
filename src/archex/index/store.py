@@ -391,6 +391,16 @@ class IndexStore:
         ).fetchone()
         return int(row[0])
 
+    def search_chunks_by_path_keyword(
+        self, keyword: str, limit: int = 50,
+    ) -> list[CodeChunk]:
+        """Find chunks whose file_path contains keyword as exact substring (case-insensitive)."""
+        cur = self._conn.execute(
+            f"{_CHUNK_SELECT} WHERE LOWER(file_path) LIKE ? LIMIT ?",
+            (f"%{keyword.lower()}%", limit),
+        )
+        return [_row_to_chunk(row) for row in cur.fetchall()]
+
     def get_edges(self) -> list[Edge]:
         cur = self._conn.execute("SELECT source, target, kind, location FROM edges")
         return [
