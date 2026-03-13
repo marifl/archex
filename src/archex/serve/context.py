@@ -39,7 +39,9 @@ MAX_EXPANSION_FILES = 5
 MAX_FILES = 8
 
 # Seeds below this fraction of max normalized seed score do not trigger expansion.
-SEED_EXPANSION_MIN = 0.10
+# Lowered from 0.10 — large repos have flatter BM25 distributions where
+# 10% excluded valid seeds, leaving graph expansion permanently inert.
+SEED_EXPANSION_MIN = 0.05
 
 # Files below this fraction of the top file's aggregate score are excluded.
 FILE_SCORE_CUTOFF = 0.15
