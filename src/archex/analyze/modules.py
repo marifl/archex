@@ -27,6 +27,34 @@ def _build_nx_graph(graph: DependencyGraph, parsed_files: list[ParsedFile]) -> A
     return g
 
 
+def _run_leiden_communities(g: Any) -> list[set[str]]:
+    """Run Leiden when available, otherwise fall back to Louvain."""
+    try:
+        import igraph as ig  # type: ignore[import-not-found]
+        import leidenalg  # type: ignore[import-not-found]
+    except ImportError:
+        logger.info("Leiden dependencies unavailable; falling back to Louvain")
+        return [{str(node) for node in community} for community in louvain_communities(g, seed=42)]
+
+    nodes = [str(node) for node in g.nodes()]  # type: ignore[misc]
+    index_by_node = {node: idx for idx, node in enumerate(nodes)}
+    ig_graph = ig.Graph(directed=False)
+    ig_graph.add_vertices(nodes)
+    ig_edges = [
+        (index_by_node[str(source)], index_by_node[str(target)])
+        for source, target in g.edges()  # type: ignore[misc]
+        if str(source) in index_by_node and str(target) in index_by_node
+    ]
+    if ig_edges:
+        ig_graph.add_edges(ig_edges)
+    partition = leidenalg.find_partition(
+        ig_graph,
+        leidenalg.ModularityVertexPartition,
+        seed=42,
+    )
+    return [{nodes[idx] for idx in community} for community in partition]
+
+
 def _infer_module_name(files: list[str]) -> str:
     """Infer a module name from the longest common path prefix of a file set."""
     if not files:
@@ -134,7 +162,7 @@ def detect_modules(
     graph: DependencyGraph,
     parsed_files: list[ParsedFile],
 ) -> list[Module]:
-    """Detect module boundaries via Louvain community detection on the file graph.
+    """Detect module boundaries via Leiden community detection on the file graph.
 
     Returns one Module per community, with cohesion scores, exports, and deps.
     """
@@ -152,17 +180,14 @@ def detect_modules(
         return [_build_module_from_community(community, g, file_lookup)]
 
     try:
-        raw_communities: list[Any] = louvain_communities(g, seed=42)  # type: ignore[no-untyped-call]
+        str_communities = _run_leiden_communities(g)
     except (nx.NetworkXError, ValueError):
         logger.warning(
-            "Louvain community detection failed, falling back to single module",
+            "Community detection failed, falling back to single module",
             exc_info=True,
         )
         # Fall back: treat all files as one module
-        raw_communities = [g.nodes()]  # type: ignore[misc]
-
-    # Cast communities to set[str]
-    str_communities: list[set[str]] = [{str(n) for n in c} for c in raw_communities]
+        str_communities = [{str(node) for node in g.nodes()}]  # type: ignore[misc]
 
     modules: list[Module] = []
     for community in str_communities:
