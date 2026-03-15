@@ -36,8 +36,8 @@ def _run_leiden_communities(g: Any) -> list[set[str]]:
         logger.info("Leiden dependencies unavailable; falling back to Louvain")
         return [{str(node) for node in community} for community in louvain_communities(g, seed=42)]
 
-    ig = cast(Any, igraph_module)
-    leidenalg = cast(Any, leidenalg_module)
+    ig = cast("Any", igraph_module)
+    leidenalg = cast("Any", leidenalg_module)
     nodes = [str(node) for node in g.nodes()]  # type: ignore[misc]
     index_by_node = {node: idx for idx, node in enumerate(nodes)}
     ig_graph: Any = ig.Graph(directed=False)
@@ -50,7 +50,7 @@ def _run_leiden_communities(g: Any) -> list[set[str]]:
     if ig_edges:
         ig_graph.add_edges(ig_edges)
     partition = cast(
-        list[list[int]],
+        "list[list[int]]",
         leidenalg.find_partition(
         ig_graph,
         leidenalg.ModularityVertexPartition,
