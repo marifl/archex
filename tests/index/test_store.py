@@ -110,6 +110,22 @@ def test_insert_and_get_chunk_surrogates(store: IndexStore) -> None:
     assert {s.chunk_id for s in result} == {s.chunk_id for s in SAMPLE_SURROGATES}
 
 
+def test_get_chunk_surrogates_large_batch(store: IndexStore) -> None:
+    large_surrogates = [
+        ChunkSurrogate(
+            chunk_id=f"chunk_{i}",
+            file_path=f"file_{i % 5}.py",
+            surrogate_text=f"path: file_{i % 5}.py\nsymbol: chunk_{i}",
+        )
+        for i in range(1050)
+    ]
+    store.insert_chunk_surrogates(large_surrogates)
+    large_ids = [surrogate.chunk_id for surrogate in large_surrogates]
+    result = store.get_chunk_surrogates(large_ids)
+    assert len(result) == len(large_surrogates)
+    assert {s.chunk_id for s in result} == set(large_ids)
+
+
 def test_chunk_surrogates_deleted_with_file(store: IndexStore) -> None:
     store.insert_chunk_surrogates(SAMPLE_SURROGATES)
     store.delete_chunks_for_files(["auth.py"])
