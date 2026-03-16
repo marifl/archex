@@ -211,11 +211,9 @@ __marimo__/
 .claude/
 .gemini
 .opencode/
-.serena/
 
-# Developer workspace (Sage-Dev generated files)
+# Developer workspace
 .docs/
-.sage/
 
 # Benchmark results (keep .gitkeep)
 benchmarks/results/*.json
