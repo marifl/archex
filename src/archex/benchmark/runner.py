@@ -16,10 +16,14 @@ from archex.exceptions import ArchexIndexError
 
 logger = logging.getLogger(__name__)
 
-AVAILABLE_STRATEGIES: list[Strategy] = [
+DEFAULT_STRATEGIES: list[Strategy] = [
     Strategy.RAW_FILES,
     Strategy.RAW_GREPPED,
     Strategy.ARCHEX_QUERY,
+]
+
+AVAILABLE_STRATEGIES: list[Strategy] = [
+    *DEFAULT_STRATEGIES,
     Strategy.ARCHEX_QUERY_FUSION,
     Strategy.CROSS_LAYER_FUSION,
 ]
@@ -90,7 +94,7 @@ def run_benchmark(
 ) -> BenchmarkReport:
     """Run a benchmark task across strategies. Clones repo if repo_path not provided."""
     if strategies is None:
-        strategies = list(AVAILABLE_STRATEGIES)
+        strategies = list(DEFAULT_STRATEGIES)
         if not _check_vector_available():
             strategies = [s for s in strategies if s not in _VECTOR_STRATEGIES]
 
