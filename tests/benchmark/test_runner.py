@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 from archex.benchmark.models import BenchmarkTask, Strategy
-from archex.benchmark.runner import AVAILABLE_STRATEGIES, run_benchmark
+from archex.benchmark.runner import AVAILABLE_STRATEGIES, DEFAULT_STRATEGIES, run_benchmark
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -27,10 +27,13 @@ def fixture_task(python_simple_repo: Path) -> tuple[BenchmarkTask, Path]:
 
 class TestAvailableStrategies:
     def test_default_strategies(self) -> None:
-        assert Strategy.RAW_FILES in AVAILABLE_STRATEGIES
-        assert Strategy.RAW_GREPPED in AVAILABLE_STRATEGIES
-        assert Strategy.ARCHEX_QUERY in AVAILABLE_STRATEGIES
-        # Fusion is in the default set (skipped at runtime if vector deps missing)
+        assert DEFAULT_STRATEGIES == [
+            Strategy.RAW_FILES,
+            Strategy.RAW_GREPPED,
+            Strategy.ARCHEX_QUERY,
+        ]
+        assert Strategy.ARCHEX_QUERY_FUSION not in DEFAULT_STRATEGIES
+        assert Strategy.CROSS_LAYER_FUSION not in DEFAULT_STRATEGIES
         assert Strategy.ARCHEX_QUERY_FUSION in AVAILABLE_STRATEGIES
         assert Strategy.CROSS_LAYER_FUSION in AVAILABLE_STRATEGIES
         assert Strategy.ARCHEX_SYMBOL_LOOKUP not in AVAILABLE_STRATEGIES
@@ -114,14 +117,16 @@ class TestRunBenchmark:
         self,
         fixture_task: tuple[BenchmarkTask, Path],
     ) -> None:
-        """strategies=None should use AVAILABLE_STRATEGIES."""
+        """strategies=None should use DEFAULT_STRATEGIES."""
         task, repo_path = fixture_task
         report = run_benchmark(task, strategies=None, repo_path=repo_path)
         strategy_names = {r.strategy for r in report.results}
-        # All three default strategies should have run
+        # Only baseline/default strategies should run
         assert Strategy.RAW_FILES in strategy_names
         assert Strategy.RAW_GREPPED in strategy_names
         assert Strategy.ARCHEX_QUERY in strategy_names
+        assert Strategy.ARCHEX_QUERY_FUSION not in strategy_names
+        assert Strategy.CROSS_LAYER_FUSION not in strategy_names
 
     def test_no_baseline_when_raw_files_omitted(
         self,

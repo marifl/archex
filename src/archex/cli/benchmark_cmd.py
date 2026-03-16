@@ -26,7 +26,7 @@ from archex.benchmark.reporter import (
     format_markdown,
     format_summary,
 )
-from archex.benchmark.runner import run_all
+from archex.benchmark.runner import DEFAULT_STRATEGIES, run_all
 
 
 @click.group("benchmark")
@@ -56,16 +56,36 @@ def benchmark_cmd() -> None:
     type=click.Path(exists=True),
     help="Directory containing task YAML files.",
 )
+@click.option(
+    "--query-fusion",
+    is_flag=True,
+    default=False,
+    help="Include the experimental archex_query_fusion strategy.",
+)
+@click.option(
+    "--cross_layer_fusion",
+    is_flag=True,
+    default=False,
+    help="Include the experimental cross_layer_fusion strategy.",
+)
 def run_cmd(
     output_dir: str,
     task_id: str | None,
     strategy_names: tuple[str, ...],
     tasks_dir: str,
+    query_fusion: bool,
+    cross_layer_fusion: bool,
 ) -> None:
     """Run benchmarks across strategies."""
-    strategies: list[Strategy] | None = None
-    if strategy_names:
-        strategies = [Strategy(s) for s in strategy_names]
+    strategies: list[Strategy] = list(DEFAULT_STRATEGIES)
+    for name in strategy_names:
+        strategy = Strategy(name)
+        if strategy not in strategies:
+            strategies.append(strategy)
+    if query_fusion and Strategy.ARCHEX_QUERY_FUSION not in strategies:
+        strategies.append(Strategy.ARCHEX_QUERY_FUSION)
+    if cross_layer_fusion and Strategy.CROSS_LAYER_FUSION not in strategies:
+        strategies.append(Strategy.CROSS_LAYER_FUSION)
 
     reports = run_all(
         tasks_dir=Path(tasks_dir),

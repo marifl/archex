@@ -96,6 +96,8 @@ _CHUNK_SELECT = (
     "signature, docstring FROM chunks"
 )
 
+_SQLITE_VARIABLE_BATCH = 900
+
 
 def _row_to_chunk(row: tuple[object, ...]) -> CodeChunk:
     symbol_kind_str = row[6]
@@ -117,6 +119,10 @@ def _row_to_chunk(row: tuple[object, ...]) -> CodeChunk:
         signature=str(row[13]) if len(row) > 13 and row[13] is not None else None,
         docstring=str(row[14]) if len(row) > 14 and row[14] is not None else None,
     )
+
+
+def _batched_ids(ids: list[str], batch_size: int = _SQLITE_VARIABLE_BATCH) -> list[list[str]]:
+    return [ids[i : i + batch_size] for i in range(0, len(ids), batch_size)]
 
 
 class IndexStore:
@@ -360,9 +366,12 @@ class IndexStore:
         """Fetch multiple chunks by ID in a single query."""
         if not ids:
             return []
-        placeholders = ",".join("?" for _ in ids)
-        cur = self._conn.execute(f"{_CHUNK_SELECT} WHERE id IN ({placeholders})", ids)
-        return [_row_to_chunk(row) for row in cur.fetchall()]
+        chunks: list[CodeChunk] = []
+        for batch in _batched_ids(ids):
+            placeholders = ",".join("?" for _ in batch)
+            cur = self._conn.execute(f"{_CHUNK_SELECT} WHERE id IN ({placeholders})", batch)
+            chunks.extend(_row_to_chunk(row) for row in cur.fetchall())
+        return chunks
 
     def get_chunks_for_file(self, file_path: str) -> list[CodeChunk]:
         cur = self._conn.execute(f"{_CHUNK_SELECT} WHERE file_path = ?", (file_path,))
@@ -393,12 +402,24 @@ class IndexStore:
         elif not chunk_ids:
             return []
         else:
-            placeholders = ",".join("?" for _ in chunk_ids)
-            cur = self._conn.execute(
-                "SELECT chunk_id, file_path, surrogate_text, surrogate_version "
-                f"FROM chunk_surrogates WHERE chunk_id IN ({placeholders})",
-                chunk_ids,
-            )
+            surrogates: list[ChunkSurrogate] = []
+            for batch in _batched_ids(chunk_ids):
+                placeholders = ",".join("?" for _ in batch)
+                cur = self._conn.execute(
+                    "SELECT chunk_id, file_path, surrogate_text, surrogate_version "
+                    f"FROM chunk_surrogates WHERE chunk_id IN ({placeholders})",
+                    batch,
+                )
+                surrogates.extend(
+                    ChunkSurrogate(
+                        chunk_id=str(row[0]),
+                        file_path=str(row[1]),
+                        surrogate_text=str(row[2]),
+                        surrogate_version=str(row[3]),
+                    )
+                    for row in cur.fetchall()
+                )
+            return surrogates
         return [
             ChunkSurrogate(
                 chunk_id=str(row[0]),
