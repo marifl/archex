@@ -36,7 +36,24 @@ MIN_SCORE_RATIO = 0.30
 
 MAX_EXPANSION_FILES = 5
 
-MAX_FILES = 8
+MAX_FILES = 6
+
+# Entry-point files define module interfaces but have low keyword density.
+# BM25 systematically under-ranks them because they re-export rather than define.
+_ENTRY_POINT_BOOST = 1.3
+_ENTRY_POINT_NAMES = frozenset(
+    {
+        "__init__.py",
+        "mod.rs",
+        "lib.rs",
+        "index.js",
+        "index.ts",
+        "index.jsx",
+        "index.tsx",
+        "index.mjs",
+        "__init__.pyi",
+    }
+)
 
 # Seeds below this fraction of max normalized seed score do not trigger expansion.
 # Lowered from 0.10 — large repos have flatter BM25 distributions where
@@ -244,9 +261,9 @@ def _adaptive_max_files(
 ) -> int:
     """Reduce MAX_FILES when BM25 has clear score separation.
 
-    When the top file score is >3x the median score, reduce to 5.
-    When >5x, reduce to 4.
-    Otherwise keep the default of 8.
+    When the top file score is >3x the median score, reduce to 4.
+    When >2x, reduce to 5.
+    Otherwise keep the default of 6.
     """
     if len(file_scores) < 3:
         return min(default, len(file_scores))
@@ -256,9 +273,9 @@ def _adaptive_max_files(
     if median <= 0:
         return default
     ratio = top / median
-    if ratio > 5.0:
-        return 4
     if ratio > 3.0:
+        return 4
+    if ratio > 2.0:
         return 5
     return default
 
@@ -267,6 +284,28 @@ def _is_architecture_query(question: str) -> bool:
     """Return True if the query contains any architecture keyword."""
     q_lower = question.lower()
     return any(kw in q_lower for kw in _ARCH_KEYWORDS)
+
+
+def _is_entry_point(file_path: str) -> bool:
+    """Return True if the file is a module entry point (e.g. __init__.py, mod.rs)."""
+    basename = file_path.rsplit("/", 1)[-1] if "/" in file_path else file_path
+    return basename in _ENTRY_POINT_NAMES
+
+
+def _directory_alignment_boost(file_path: str, query_terms: set[str]) -> float:
+    """Return a multiplier >1.0 when the file's directory path matches query terms.
+
+    If the query mentions "router" and the file lives under ``lib/router/``,
+    this returns 1.2.  Stacks once — multiple directory matches don't compound.
+    """
+    parts = file_path.lower().rsplit("/", 1)
+    if len(parts) < 2:
+        return 1.0
+    dir_path = parts[0]
+    dir_segments = {seg for seg in dir_path.split("/") if len(seg) >= 3}
+    if dir_segments & query_terms:
+        return 1.2
+    return 1.0
 
 
 def assemble_context(
@@ -606,16 +645,27 @@ def assemble_context(
             co_present = sum(1 for f in mod.files if f in candidate_files)
             cohesion = (co_present / len(mod.files)) * mod.cohesion_score
 
-        # Test files are less likely to be the answer — mild penalty
+        # Test files mirror implementation vocabulary — strong penalty
         is_test = chunk.file_path.startswith("test") or "/test" in chunk.file_path
-        test_penalty = 0.6 if is_test else 1.0
+        test_penalty = 0.3 if is_test else 1.0
+
+        # Entry-point files (mod.rs, __init__.py, index.js) define module interfaces
+        entry_boost = _ENTRY_POINT_BOOST if _is_entry_point(chunk.file_path) else 1.0
+
+        # Directory-path alignment: files under directories matching query terms
+        dir_boost = _directory_alignment_boost(chunk.file_path, q_terms)
 
         final = (
-            weights.relevance * relevance
-            + weights.structural * structural
-            + weights.type_coverage * type_coverage
-            + weights.cohesion * cohesion
-        ) * test_penalty
+            (
+                weights.relevance * relevance
+                + weights.structural * structural
+                + weights.type_coverage * type_coverage
+                + weights.cohesion * cohesion
+            )
+            * test_penalty
+            * entry_boost
+            * dir_boost
+        )
         ranked.append(
             RankedChunk(
                 chunk=chunk,

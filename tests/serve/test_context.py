@@ -668,3 +668,125 @@ def test_vector_only_recovery_when_bm25_empty() -> None:
     included = {rc.chunk.file_path for rc in bundle.chunks}
     assert "needle.py" in included, "vector-only seed needle.py must appear in bundle"
     assert "other.py" not in included, "isolated other.py must not appear"
+
+
+# ---------------------------------------------------------------------------
+# Entry-point boost tests
+# ---------------------------------------------------------------------------
+
+
+def test_entry_point_boost_ranks_mod_rs_higher() -> None:
+    """mod.rs should score higher than a leaf module with equal BM25 score."""
+    graph = DependencyGraph()
+    graph.add_file_node("src/runtime/mod.rs")
+    graph.add_file_node("src/runtime/scheduler/current_thread.rs")
+    mod_chunk = make_chunk("c_mod", "src/runtime/mod.rs", token_count=10)
+    leaf_chunk = make_chunk("c_leaf", "src/runtime/scheduler/current_thread.rs", token_count=10)
+    results = [(mod_chunk, 1.0), (leaf_chunk, 1.0)]
+    bundle = assemble_context(
+        results, graph, [mod_chunk, leaf_chunk], "how does the runtime work?", token_budget=1000
+    )
+    scores = {rc.chunk.file_path: rc.final_score for rc in bundle.chunks}
+    assert scores["src/runtime/mod.rs"] > scores["src/runtime/scheduler/current_thread.rs"]
+
+
+def test_entry_point_boost_init_py() -> None:
+    """__init__.py gets entry-point boost over regular .py files."""
+    graph = DependencyGraph()
+    graph.add_file_node("pkg/__init__.py")
+    graph.add_file_node("pkg/utils.py")
+    init_chunk = make_chunk("c_init", "pkg/__init__.py", token_count=10)
+    utils_chunk = make_chunk("c_utils", "pkg/utils.py", token_count=10)
+    results = [(init_chunk, 1.0), (utils_chunk, 1.0)]
+    bundle = assemble_context(results, graph, [init_chunk, utils_chunk], "q", token_budget=1000)
+    scores = {rc.chunk.file_path: rc.final_score for rc in bundle.chunks}
+    assert scores["pkg/__init__.py"] > scores["pkg/utils.py"]
+
+
+def test_entry_point_boost_index_js() -> None:
+    """index.js gets entry-point boost."""
+    graph = DependencyGraph()
+    graph.add_file_node("lib/router/index.js")
+    graph.add_file_node("lib/router/layer.js")
+    idx_chunk = make_chunk("c_idx", "lib/router/index.js", token_count=10)
+    layer_chunk = make_chunk("c_layer", "lib/router/layer.js", token_count=10)
+    results = [(idx_chunk, 1.0), (layer_chunk, 1.0)]
+    bundle = assemble_context(results, graph, [idx_chunk, layer_chunk], "q", token_budget=1000)
+    scores = {rc.chunk.file_path: rc.final_score for rc in bundle.chunks}
+    assert scores["lib/router/index.js"] > scores["lib/router/layer.js"]
+
+
+# ---------------------------------------------------------------------------
+# Directory-path alignment tests
+# ---------------------------------------------------------------------------
+
+
+def test_directory_alignment_boosts_matching_path() -> None:
+    """File under lib/router/ scores higher when query mentions 'router'."""
+    graph = DependencyGraph()
+    graph.add_file_node("lib/router/route.js")
+    graph.add_file_node("lib/application.js")
+    route_chunk = make_chunk("c_route", "lib/router/route.js", token_count=10)
+    app_chunk = make_chunk("c_app", "lib/application.js", token_count=10)
+    results = [(route_chunk, 1.0), (app_chunk, 1.0)]
+    bundle = assemble_context(
+        results,
+        graph,
+        [route_chunk, app_chunk],
+        "how does the router handle requests?",
+        token_budget=1000,
+    )
+    scores = {rc.chunk.file_path: rc.final_score for rc in bundle.chunks}
+    assert scores["lib/router/route.js"] > scores["lib/application.js"]
+
+
+def test_directory_alignment_no_boost_without_match() -> None:
+    """No directory boost when query terms don't match any directory."""
+    from archex.serve.context import _directory_alignment_boost  # pyright: ignore[reportPrivateUsage]
+
+    assert _directory_alignment_boost("lib/utils/helpers.py", {"router", "middleware"}) == 1.0
+
+
+def test_directory_alignment_matches_query_term() -> None:
+    """Directory matching returns 1.2 boost."""
+    from archex.serve.context import _directory_alignment_boost  # pyright: ignore[reportPrivateUsage]
+
+    assert _directory_alignment_boost("lib/router/index.js", {"router"}) == 1.2
+
+
+# ---------------------------------------------------------------------------
+# Stronger test penalty tests
+# ---------------------------------------------------------------------------
+
+
+def test_test_file_penalty_is_0_3() -> None:
+    """Test files receive a 0.3 penalty (stronger than previous 0.6)."""
+    graph = DependencyGraph()
+    graph.add_file_node("src/auth.py")
+    graph.add_file_node("tests/test_auth.py")
+    src_chunk = make_chunk("c_src", "src/auth.py", token_count=10)
+    test_chunk = make_chunk("c_test", "tests/test_auth.py", token_count=10)
+    results = [(src_chunk, 1.0), (test_chunk, 1.0)]
+    bundle = assemble_context(results, graph, [src_chunk, test_chunk], "q", token_budget=1000)
+    scores = {rc.chunk.file_path: rc.final_score for rc in bundle.chunks}
+    # Test file should be 0.3x the source file score
+    ratio = scores["tests/test_auth.py"] / scores["src/auth.py"]
+    assert 0.25 < ratio < 0.35, f"Expected ~0.3 ratio, got {ratio}"
+
+
+# ---------------------------------------------------------------------------
+# _is_entry_point unit tests
+# ---------------------------------------------------------------------------
+
+
+def test_is_entry_point_recognizes_known_names() -> None:
+    from archex.serve.context import _is_entry_point  # pyright: ignore[reportPrivateUsage]
+
+    assert _is_entry_point("src/runtime/mod.rs")
+    assert _is_entry_point("pkg/__init__.py")
+    assert _is_entry_point("lib/router/index.js")
+    assert _is_entry_point("components/index.tsx")
+    assert _is_entry_point("lib.rs")
+    assert not _is_entry_point("src/utils.py")
+    assert not _is_entry_point("tree.go")
+    assert not _is_entry_point("mod_helper.rs")
