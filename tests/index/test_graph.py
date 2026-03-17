@@ -252,3 +252,80 @@ class TestUpdateFiles:
         assert len(edges) == 1
         assert edges[0].source == "a.py"
         assert edges[0].target == "c.py"
+
+
+# ---------------------------------------------------------------------------
+# Co-directory edges
+# ---------------------------------------------------------------------------
+
+
+class TestCoDirectoryEdges:
+    def test_adds_edges_for_same_directory(self) -> None:
+        graph = DependencyGraph()
+        graph.add_file_node("pkg/a.go")
+        graph.add_file_node("pkg/b.go")
+        graph.add_file_node("pkg/c.go")
+
+        added = graph.add_co_directory_edges()
+        # 3 files → 3 pairs × 2 directions = 6 edges
+        assert added == 6
+        assert graph.file_edge_count == 6
+        assert "pkg/b.go" in graph.imports_of("pkg/a.go")
+        assert "pkg/a.go" in graph.imports_of("pkg/b.go")
+
+    def test_no_edges_across_directories(self) -> None:
+        graph = DependencyGraph()
+        graph.add_file_node("pkg1/a.go")
+        graph.add_file_node("pkg2/b.go")
+
+        added = graph.add_co_directory_edges()
+        assert added == 0
+        assert graph.file_edge_count == 0
+
+    def test_skips_existing_edges(self) -> None:
+        graph = DependencyGraph()
+        graph.add_file_node("pkg/a.go")
+        graph.add_file_node("pkg/b.go")
+        graph.add_file_edge("pkg/a.go", "pkg/b.go", kind="imports")
+
+        added = graph.add_co_directory_edges()
+        # a→b already exists, so only b→a added
+        assert added == 1
+        assert graph.file_edge_count == 2
+
+    def test_single_file_directory_no_edges(self) -> None:
+        graph = DependencyGraph()
+        graph.add_file_node("pkg/alone.go")
+
+        added = graph.add_co_directory_edges()
+        assert added == 0
+
+    def test_root_directory_files(self) -> None:
+        graph = DependencyGraph()
+        graph.add_file_node("main.go")
+        graph.add_file_node("utils.go")
+
+        added = graph.add_co_directory_edges()
+        assert added == 2
+        assert "utils.go" in graph.imports_of("main.go")
+
+    def test_invalidates_centrality_cache(self) -> None:
+        graph = DependencyGraph()
+        graph.add_file_node("a.go")
+        graph.add_file_node("b.go")
+        _ = graph.structural_centrality()
+        assert graph._centrality_cache is not None  # pyright: ignore[reportPrivateUsage]
+
+        graph.add_co_directory_edges()
+        assert graph._centrality_cache is None  # pyright: ignore[reportPrivateUsage]
+
+    def test_edge_kind_is_co_directory(self) -> None:
+        from archex.models import EdgeKind
+
+        graph = DependencyGraph()
+        graph.add_file_node("pkg/a.go")
+        graph.add_file_node("pkg/b.go")
+        graph.add_co_directory_edges()
+
+        edges = graph.file_edges()
+        assert all(e.kind == EdgeKind.CO_DIRECTORY for e in edges)

@@ -40,6 +40,7 @@ class EdgeKind(StrEnum):
     IMPLEMENTS = "implements"
     USES_TYPE = "uses_type"
     EXPORTS = "exports"
+    CO_DIRECTORY = "co_directory"
 
 
 class PatternCategory(StrEnum):

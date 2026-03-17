@@ -875,6 +875,12 @@ def query(
                 stored_edges = store.get_edges()
                 graph = DependencyGraph.from_edges(stored_edges)
 
+                if graph.file_edge_count == 0 and graph.file_count > 1:
+                    co_dir_added = graph.add_co_directory_edges()
+                    logger.info(
+                        "Added %d co-directory edges (cached index had 0 edges)", co_dir_added
+                    )
+
                 top_k = _compute_top_k(chunk_count)
                 # Pre-load all chunks into memory before parallel search so the
                 # vector thread has no dependency on the SQLite store connection.
@@ -1039,6 +1045,15 @@ def query(
             )
 
         graph = DependencyGraph.from_parsed_files(parsed_files, resolved_map)
+
+        # Fallback for languages where import resolution fails (Go, Rust):
+        # add co-directory edges so graph expansion has something to work with.
+        if graph.file_edge_count == 0 and graph.file_count > 1:
+            co_dir_added = graph.add_co_directory_edges()
+            logger.info(
+                "Added %d co-directory edges (import resolution produced 0 edges)",
+                co_dir_added,
+            )
 
         t4 = time.perf_counter()
         file_chunker: Chunker = chunker if chunker is not None else ASTChunker(config=index_config)
