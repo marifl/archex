@@ -58,6 +58,45 @@ class DependencyGraph:
 
         return graph
 
+    def add_co_directory_edges(self) -> int:
+        """Add bidirectional edges between files in the same directory.
+
+        For languages where import resolution fails (Go, Rust), files in the
+        same directory are implicitly co-dependent — they share the same package
+        scope and can reference each other's symbols without import statements.
+
+        Only adds edges where none exist yet.  Returns the number of edges added.
+        """
+        from collections import defaultdict
+
+        dir_groups: defaultdict[str, list[str]] = defaultdict(list)
+        for node in self._file_graph.nodes():  # type: ignore[misc]
+            path = str(node)
+            directory = path.rsplit("/", 1)[0] if "/" in path else ""
+            dir_groups[directory].append(path)
+
+        added = 0
+        for files in dir_groups.values():
+            if len(files) < 2:
+                continue
+            for i, src in enumerate(files):
+                for tgt in files[i + 1 :]:
+                    if not self._file_graph.has_edge(src, tgt):  # type: ignore[misc]
+                        self._file_graph.add_edge(  # type: ignore[misc]
+                            src, tgt, kind=EdgeKind.CO_DIRECTORY
+                        )
+                        added += 1
+                    if not self._file_graph.has_edge(tgt, src):  # type: ignore[misc]
+                        self._file_graph.add_edge(  # type: ignore[misc]
+                            tgt, src, kind=EdgeKind.CO_DIRECTORY
+                        )
+                        added += 1
+
+        if added > 0:
+            self._centrality_cache = None
+
+        return added
+
     @classmethod
     def from_edges(cls, edges: list[Edge]) -> DependencyGraph:
         """Reconstruct a file-level DependencyGraph from Edge objects."""
