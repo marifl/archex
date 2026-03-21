@@ -540,9 +540,7 @@ def test_schema_migration_from_old_fts_schema(tmp_path: Path) -> None:
     idx = BM25Index(store)
 
     # The new schema must have the docstring column — probe it
-    store.conn.execute(
-        "SELECT chunk_id FROM chunks_fts WHERE docstring MATCH 'probe' LIMIT 0"
-    )
+    store.conn.execute("SELECT chunk_id FROM chunks_fts WHERE docstring MATCH 'probe' LIMIT 0")
 
     # Index must be functional after migration
     chunk = CodeChunk(
