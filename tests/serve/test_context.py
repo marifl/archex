@@ -790,3 +790,86 @@ def test_is_entry_point_recognizes_known_names() -> None:
     assert not _is_entry_point("src/utils.py")
     assert not _is_entry_point("tree.go")
     assert not _is_entry_point("mod_helper.rs")
+
+
+# ---------------------------------------------------------------------------
+# Convergent activation gate tests
+# ---------------------------------------------------------------------------
+
+
+def test_expansion_convergent_activation_bonus() -> None:
+    """A file reached by two independent seeds ranks higher than one reached by one seed.
+
+    file_a and file_b (both seeds) both import file_c — convergent evidence.
+    file_d (seed) imports file_e — single-seed path.
+    file_c must rank above file_e in expansion priority.
+    """
+    graph = DependencyGraph()
+    for name in ("file_a.py", "file_b.py", "file_c.py", "file_d.py", "file_e.py"):
+        graph.add_file_node(name)
+    # Two seeds both import file_c — convergent evidence
+    graph.add_file_edge("file_a.py", "file_c.py", kind="imports")
+    graph.add_file_edge("file_b.py", "file_c.py", kind="imports")
+    # Single seed imports file_e — single path
+    graph.add_file_edge("file_d.py", "file_e.py", kind="imports")
+
+    chunk_a = make_chunk("ca", "file_a.py", token_count=10)
+    chunk_b = make_chunk("cb", "file_b.py", token_count=10)
+    chunk_c = make_chunk("cc", "file_c.py", token_count=10)
+    chunk_d = make_chunk("cd", "file_d.py", token_count=10)
+    chunk_e = make_chunk("ce", "file_e.py", token_count=10)
+
+    # All seeds have equal BM25 scores — only convergence distinguishes file_c vs file_e
+    results = [(chunk_a, 5.0), (chunk_b, 5.0), (chunk_d, 5.0)]
+    all_chunks = [chunk_a, chunk_b, chunk_c, chunk_d, chunk_e]
+
+    bundle = assemble_context(results, graph, all_chunks, "q", token_budget=1000)
+
+    included_files = {rc.chunk.file_path for rc in bundle.chunks}
+    # Both expansion targets must appear in the bundle
+    assert "file_c.py" in included_files, "file_c.py (convergent) must be included"
+    assert "file_e.py" in included_files, "file_e.py (single-seed) must be included"
+
+    scores = {rc.chunk.file_path: rc.final_score for rc in bundle.chunks}
+    assert scores["file_c.py"] > scores["file_e.py"], (
+        f"Convergent file_c.py ({scores['file_c.py']:.4f}) must outrank "
+        f"single-seed file_e.py ({scores['file_e.py']:.4f})"
+    )
+
+
+def test_expansion_additive_accumulation() -> None:
+    """Three seeds importing the same dependency accumulate higher priority than one seed.
+
+    dep_shared is imported by all three seeds; dep_single is imported by only one.
+    dep_shared must have higher expansion priority and thus rank higher after scoring.
+    """
+    graph = DependencyGraph()
+    for name in ("seed_x.py", "seed_y.py", "seed_z.py", "dep_shared.py", "dep_single.py"):
+        graph.add_file_node(name)
+    # All three seeds import the shared dep
+    graph.add_file_edge("seed_x.py", "dep_shared.py", kind="imports")
+    graph.add_file_edge("seed_y.py", "dep_shared.py", kind="imports")
+    graph.add_file_edge("seed_z.py", "dep_shared.py", kind="imports")
+    # Only one seed imports the single dep
+    graph.add_file_edge("seed_x.py", "dep_single.py", kind="imports")
+
+    chunk_x = make_chunk("cx", "seed_x.py", token_count=10)
+    chunk_y = make_chunk("cy", "seed_y.py", token_count=10)
+    chunk_z = make_chunk("cz", "seed_z.py", token_count=10)
+    chunk_shared = make_chunk("c_shared", "dep_shared.py", token_count=10)
+    chunk_single = make_chunk("c_single", "dep_single.py", token_count=10)
+
+    results = [(chunk_x, 5.0), (chunk_y, 5.0), (chunk_z, 5.0)]
+    all_chunks = [chunk_x, chunk_y, chunk_z, chunk_shared, chunk_single]
+
+    bundle = assemble_context(results, graph, all_chunks, "q", token_budget=1000)
+
+    included_files = {rc.chunk.file_path for rc in bundle.chunks}
+    assert "dep_shared.py" in included_files, "dep_shared.py must be included"
+    assert "dep_single.py" in included_files, "dep_single.py must be included"
+
+    scores = {rc.chunk.file_path: rc.final_score for rc in bundle.chunks}
+    assert scores["dep_shared.py"] > scores["dep_single.py"], (
+        f"3-seed dep_shared.py ({scores['dep_shared.py']:.4f}) must outrank "
+        f"1-seed dep_single.py ({scores['dep_single.py']:.4f})"
+    )

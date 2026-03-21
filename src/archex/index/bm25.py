@@ -20,11 +20,29 @@ CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts USING fts5(
     content,
     symbol_name,
     file_path,
+    docstring,
     tokenize='porter unicode61'
 );
 """
 
 _DROP_FTS_ROWS = "DELETE FROM chunks_fts;"
+
+
+def _ensure_fts_schema(conn: sqlite3.Connection) -> None:
+    """Ensure the FTS table has the current schema (including docstring column).
+
+    FTS5 does not support ALTER TABLE, so we detect stale schemas
+    by checking column count and recreate if needed.
+    """
+    try:
+        # Probe for the docstring column by attempting a dummy query
+        conn.execute("SELECT chunk_id FROM chunks_fts WHERE docstring MATCH 'probe' LIMIT 0")
+    except sqlite3.OperationalError:
+        # docstring column missing — drop and recreate with new schema
+        conn.execute("DROP TABLE IF EXISTS chunks_fts")
+        conn.execute(_CREATE_FTS)
+        conn.commit()
+
 
 _STOPWORDS = frozenset(
     {
@@ -96,6 +114,7 @@ class BM25Index:
     def __init__(self, store: IndexStore) -> None:
         self._store = store
         store.conn.execute(_CREATE_FTS)
+        _ensure_fts_schema(store.conn)
         store.conn.commit()
 
     @property
@@ -110,10 +129,16 @@ class BM25Index:
         conn = self._store.conn
         conn.execute(_DROP_FTS_ROWS)
         conn.executemany(
-            "INSERT INTO chunks_fts (chunk_id, content, symbol_name, file_path) "
-            "VALUES (?, ?, ?, ?)",
+            "INSERT INTO chunks_fts (chunk_id, content, symbol_name, file_path, docstring) "
+            "VALUES (?, ?, ?, ?, ?)",
             [
-                (c.id, expand_identifiers(c.content), c.symbol_name or "", c.file_path)
+                (
+                    c.id,
+                    expand_identifiers(c.content),
+                    c.symbol_name or "",
+                    c.file_path,
+                    c.docstring or "",
+                )
                 for c in chunks
             ],
         )
@@ -128,7 +153,7 @@ class BM25Index:
         conn = self._store.conn
         try:
             cur = conn.execute(
-                "SELECT chunk_id, bm25(chunks_fts, 1.0, 3.0, 1.5) AS score "
+                "SELECT chunk_id, bm25(chunks_fts, 0.5, 10.0, 5.0, 6.0) AS score "
                 "FROM chunks_fts WHERE chunks_fts MATCH ? ORDER BY score LIMIT ?",
                 (escaped, top_k),
             )
@@ -189,6 +214,43 @@ class BM25Index:
                 merged[cid] = score
 
         return sorted(merged.items(), key=lambda x: x[1])[:top_k]
+
+    def avg_idf(self, query: str) -> float:
+        """Compute average Inverse Document Frequency of query terms against the corpus.
+
+        Low AvgIDF (< ~2.0) means query terms are common across the corpus —
+        BM25 scores will be flat and unreliable for ranking.
+        High AvgIDF means terms are specific — BM25 can discriminate effectively.
+
+        Used as a pre-retrieval Query Performance Prediction signal to decide
+        whether to force fusion with vector search.
+        """
+        import math
+
+        tokens = _sanitize_tokens(query)
+        if not tokens:
+            return 0.0
+
+        conn = self._store.conn
+        total_docs_row = conn.execute("SELECT COUNT(*) FROM chunks_fts").fetchone()
+        total_docs = total_docs_row[0] if total_docs_row else 0
+        if total_docs == 0:
+            return 0.0
+
+        idfs: list[float] = []
+        for token in tokens:
+            try:
+                row = conn.execute(
+                    "SELECT COUNT(*) FROM chunks_fts WHERE chunks_fts MATCH ?",
+                    (token,),
+                ).fetchone()
+                df = row[0] if row else 0
+            except sqlite3.OperationalError:
+                continue
+            if df > 0:
+                idfs.append(math.log(total_docs / df))
+
+        return sum(idfs) / len(idfs) if idfs else 0.0
 
     def search(self, query: str, top_k: int = 20) -> list[tuple[CodeChunk, float]]:
         if not query.strip():

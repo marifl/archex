@@ -38,6 +38,10 @@ MAX_EXPANSION_FILES = 5
 
 MAX_FILES = 6
 
+# Files reached by ≥2 independent seeds receive a convergence bonus —
+# multiple structural paths to a file corroborate its relevance.
+CONVERGENCE_BONUS = 1.5
+
 # Entry-point files define module interfaces but have low keyword density.
 # BM25 systematically under-ranks them because they re-export rather than define.
 _ENTRY_POINT_BOOST = 1.3
@@ -319,6 +323,7 @@ def assemble_context(
     modules: list[Module] | None = None,
     trace: PipelineTrace | None = None,
     expansion_min_override: float | None = None,
+    avg_idf: float | None = None,
 ) -> ContextBundle:
     """Assemble a token-budgeted ContextBundle from search results and a dependency graph.
 
@@ -353,7 +358,7 @@ def assemble_context(
 
         # Gate fusion: skip when BM25 is confident and signals agree.
         # Always fuse when BM25 is empty — vector is the only signal.
-        fuse, fuse_reason = should_fuse(search_results, vector_results)
+        fuse, fuse_reason = should_fuse(search_results, vector_results, avg_idf=avg_idf)
         bm25_cv_val = bm25_score_cv(search_results)
 
         if fuse or not search_results:
@@ -452,6 +457,7 @@ def assemble_context(
         )
 
     expansion_priority: dict[str, float] = {}
+    expansion_source_count: dict[str, int] = {}
     for file_path in seed_files:
         # Only expand from seeds above the confidence threshold
         if norm_seed_scores.get(file_path, 0.0) < effective_expansion_min:
@@ -464,20 +470,22 @@ def assemble_context(
                 path_lower = dep.lower()
                 path_match = any(t in path_lower for t in q_terms)
                 priority = seed_score * (1.5 if path_match else 1.0)
-                expansion_priority[dep] = max(
-                    expansion_priority.get(dep, 0.0),
-                    priority,
-                )
+                expansion_priority[dep] = expansion_priority.get(dep, 0.0) + priority
+                expansion_source_count[dep] = expansion_source_count.get(dep, 0) + 1
         # Importers get half seed score — they're consumers, not dependencies
         for imp in graph.imported_by(file_path):
             if imp not in seed_files:
                 path_lower = imp.lower()
                 path_match = any(t in path_lower for t in q_terms)
                 priority = seed_score * (0.75 if path_match else 0.5)
-                expansion_priority[imp] = max(
-                    expansion_priority.get(imp, 0.0),
-                    priority,
-                )
+                expansion_priority[imp] = expansion_priority.get(imp, 0.0) + priority
+                expansion_source_count[imp] = expansion_source_count.get(imp, 0) + 1
+
+    # Convergence bonus: files reached by multiple independent seeds are structurally
+    # corroborated — more likely to be genuinely relevant than files from a single seed.
+    for dep in expansion_priority:
+        if expansion_source_count.get(dep, 0) >= 2:
+            expansion_priority[dep] *= CONVERGENCE_BONUS
 
     total_expansion_candidates = len(expansion_priority)
     if total_expansion_candidates == 0:
