@@ -20,11 +20,29 @@ CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts USING fts5(
     content,
     symbol_name,
     file_path,
+    docstring,
     tokenize='porter unicode61'
 );
 """
 
 _DROP_FTS_ROWS = "DELETE FROM chunks_fts;"
+
+
+def _ensure_fts_schema(conn: sqlite3.Connection) -> None:
+    """Ensure the FTS table has the current schema (including docstring column).
+
+    FTS5 does not support ALTER TABLE, so we detect stale schemas
+    by checking column count and recreate if needed.
+    """
+    try:
+        # Probe for the docstring column by attempting a dummy query
+        conn.execute("SELECT chunk_id FROM chunks_fts WHERE docstring MATCH 'probe' LIMIT 0")
+    except sqlite3.OperationalError:
+        # docstring column missing — drop and recreate with new schema
+        conn.execute("DROP TABLE IF EXISTS chunks_fts")
+        conn.execute(_CREATE_FTS)
+        conn.commit()
+
 
 _STOPWORDS = frozenset(
     {
@@ -96,6 +114,7 @@ class BM25Index:
     def __init__(self, store: IndexStore) -> None:
         self._store = store
         store.conn.execute(_CREATE_FTS)
+        _ensure_fts_schema(store.conn)
         store.conn.commit()
 
     @property
@@ -110,10 +129,16 @@ class BM25Index:
         conn = self._store.conn
         conn.execute(_DROP_FTS_ROWS)
         conn.executemany(
-            "INSERT INTO chunks_fts (chunk_id, content, symbol_name, file_path) "
-            "VALUES (?, ?, ?, ?)",
+            "INSERT INTO chunks_fts (chunk_id, content, symbol_name, file_path, docstring) "
+            "VALUES (?, ?, ?, ?, ?)",
             [
-                (c.id, expand_identifiers(c.content), c.symbol_name or "", c.file_path)
+                (
+                    c.id,
+                    expand_identifiers(c.content),
+                    c.symbol_name or "",
+                    c.file_path,
+                    c.docstring or "",
+                )
                 for c in chunks
             ],
         )
@@ -128,7 +153,7 @@ class BM25Index:
         conn = self._store.conn
         try:
             cur = conn.execute(
-                "SELECT chunk_id, bm25(chunks_fts, 1.0, 3.0, 1.5) AS score "
+                "SELECT chunk_id, bm25(chunks_fts, 0.5, 10.0, 5.0, 6.0) AS score "
                 "FROM chunks_fts WHERE chunks_fts MATCH ? ORDER BY score LIMIT ?",
                 (escaped, top_k),
             )

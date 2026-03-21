@@ -429,3 +429,140 @@ def test_single_term_query_still_works(
     results = idx.search("helper")
     assert len(results) > 0
     assert results[0][0].file_path == "utils.py"
+
+# Docstring column tests
+# ---------------------------------------------------------------------------
+
+
+DOCSTRING_CHUNKS = [
+    CodeChunk(
+        id="cache.py:CacheManager:1",
+        content="class CacheManager:\n    pass",
+        file_path="cache.py",
+        start_line=1,
+        end_line=2,
+        symbol_name="CacheManager",
+        symbol_kind=SymbolKind.CLASS,
+        language="python",
+        token_count=10,
+        docstring="Manages in-memory cache eviction using LRU strategy.",
+    ),
+    CodeChunk(
+        id="db.py:DatabasePool:1",
+        content="class DatabasePool:\n    pass",
+        file_path="db.py",
+        start_line=1,
+        end_line=2,
+        symbol_name="DatabasePool",
+        symbol_kind=SymbolKind.CLASS,
+        language="python",
+        token_count=10,
+        docstring=None,
+    ),
+    CodeChunk(
+        id="net.py:HttpClient:1",
+        content="class HttpClient:\n    pass",
+        file_path="net.py",
+        start_line=1,
+        end_line=2,
+        symbol_name="HttpClient",
+        symbol_kind=SymbolKind.CLASS,
+        language="python",
+        token_count=10,
+        docstring="Sends HTTP requests with retry and timeout support.",
+    ),
+]
+
+
+@pytest.fixture
+def docstring_index(tmp_path: Path) -> Generator[tuple[IndexStore, BM25Index], None, None]:
+    db = tmp_path / "docstring_test.db"
+    s = IndexStore(db)
+    idx = BM25Index(s)
+    s.insert_chunks(DOCSTRING_CHUNKS)
+    idx.build(DOCSTRING_CHUNKS)
+    yield s, idx
+    s.close()
+
+
+def test_docstring_term_is_searchable(
+    docstring_index: tuple[IndexStore, BM25Index],
+) -> None:
+    """Terms found only in docstrings must appear in search results."""
+    _, idx = docstring_index
+    # "eviction" appears only in CacheManager's docstring, not in content
+    results = idx.search("eviction")
+    assert len(results) > 0
+    ids = [c.id for c, _ in results]
+    assert "cache.py:CacheManager:1" in ids
+
+
+def test_docstring_chunk_ranks_higher_than_no_docstring(
+    docstring_index: tuple[IndexStore, BM25Index],
+) -> None:
+    """A chunk with query terms in its docstring ranks above chunks without docstrings."""
+    _, idx = docstring_index
+    # "retry" appears only in HttpClient's docstring
+    results = idx.search("retry")
+    assert len(results) > 0
+    top_chunk, _ = results[0]
+    assert top_chunk.id == "net.py:HttpClient:1"
+
+
+# ---------------------------------------------------------------------------
+# Schema migration test
+# ---------------------------------------------------------------------------
+
+
+def test_schema_migration_from_old_fts_schema(tmp_path: Path) -> None:
+    """BM25Index detects a stale FTS schema (no docstring column) and migrates it."""
+    db = tmp_path / "migration_test.db"
+    store = IndexStore(db)
+
+    # Manually create the old FTS schema without the docstring column
+    store.conn.execute("DROP TABLE IF EXISTS chunks_fts")
+    store.conn.execute(
+        """
+        CREATE VIRTUAL TABLE chunks_fts USING fts5(
+            chunk_id UNINDEXED,
+            content,
+            symbol_name,
+            file_path,
+            tokenize='porter unicode61'
+        )
+        """
+    )
+    store.conn.commit()
+
+    # Instantiating BM25Index must trigger migration transparently
+    idx = BM25Index(store)
+
+    # The new schema must have the docstring column — probe it
+    store.conn.execute(
+        "SELECT chunk_id FROM chunks_fts WHERE docstring MATCH 'probe' LIMIT 0"
+    )
+
+    # Index must be functional after migration
+    chunk = CodeChunk(
+        id="migrated.py:func:1",
+        content="def func(): pass",
+        file_path="migrated.py",
+        start_line=1,
+        end_line=1,
+        symbol_name="func",
+        symbol_kind=SymbolKind.FUNCTION,
+        language="python",
+        token_count=5,
+        docstring="xyzzy_migrated_docstring",
+    )
+    store.insert_chunks([chunk])
+    idx.build([chunk])
+
+    results = idx.search("xyzzy migrated docstring")
+    assert len(results) > 0
+    assert results[0][0].id == "migrated.py:func:1"
+
+    store.close()
+
+
+# ---------------------------------------------------------------------------
