@@ -215,6 +215,43 @@ class BM25Index:
 
         return sorted(merged.items(), key=lambda x: x[1])[:top_k]
 
+    def avg_idf(self, query: str) -> float:
+        """Compute average Inverse Document Frequency of query terms against the corpus.
+
+        Low AvgIDF (< ~2.0) means query terms are common across the corpus —
+        BM25 scores will be flat and unreliable for ranking.
+        High AvgIDF means terms are specific — BM25 can discriminate effectively.
+
+        Used as a pre-retrieval Query Performance Prediction signal to decide
+        whether to force fusion with vector search.
+        """
+        import math
+
+        tokens = _sanitize_tokens(query)
+        if not tokens:
+            return 0.0
+
+        conn = self._store.conn
+        total_docs_row = conn.execute("SELECT COUNT(*) FROM chunks_fts").fetchone()
+        total_docs = total_docs_row[0] if total_docs_row else 0
+        if total_docs == 0:
+            return 0.0
+
+        idfs: list[float] = []
+        for token in tokens:
+            try:
+                row = conn.execute(
+                    "SELECT COUNT(*) FROM chunks_fts WHERE chunks_fts MATCH ?",
+                    (token,),
+                ).fetchone()
+                df = row[0] if row else 0
+            except sqlite3.OperationalError:
+                continue
+            if df > 0:
+                idfs.append(math.log(total_docs / df))
+
+        return sum(idfs) / len(idfs) if idfs else 0.0
+
     def search(self, query: str, top_k: int = 20) -> list[tuple[CodeChunk, float]]:
         if not query.strip():
             return []

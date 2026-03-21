@@ -963,6 +963,7 @@ def query(
                             },
                         )
                     )
+                query_avg_idf = bm25.avg_idf(question) if vector_results is not None else None
                 bundle = assemble_context(
                     search_results=search_results,
                     graph=graph,
@@ -972,6 +973,7 @@ def query(
                     vector_results=vector_results,  # type: ignore[arg-type]
                     scoring_weights=scoring_weights,
                     trace=trace,
+                    avg_idf=query_avg_idf,
                 )
                 bundle.retrieval_metadata.vector_mode = index_config.vector_mode
                 bundle.retrieval_metadata.surrogate_version = (
@@ -1255,6 +1257,7 @@ def query(
                         },
                     )
                 )
+            query_avg_idf_miss = bm25.avg_idf(question) if vector_results_miss is not None else None
             bundle = assemble_context(
                 search_results=search_results,
                 graph=graph,
@@ -1264,6 +1267,7 @@ def query(
                 vector_results=vector_results_miss,  # type: ignore[arg-type]
                 scoring_weights=scoring_weights,
                 trace=trace,
+                avg_idf=query_avg_idf_miss,
             )
             bundle.retrieval_metadata.vector_mode = index_config.vector_mode
             bundle.retrieval_metadata.surrogate_version = (

@@ -534,7 +534,10 @@ class TestConfidenceWeightedRRF:
         assert len(fused) == 2
 
 
-def _make_chunks_with_paths(paths: list[str]) -> list[tuple[CodeChunk, float]]:
+def _make_chunks_with_paths(
+    paths: list[str],
+    scores: list[float] | None = None,
+) -> list[tuple[CodeChunk, float]]:
     """Build (chunk, score) pairs with distinct file paths for should_fuse tests."""
     results: list[tuple[CodeChunk, float]] = []
     for i, path in enumerate(paths):
@@ -549,8 +552,8 @@ def _make_chunks_with_paths(paths: list[str]) -> list[tuple[CodeChunk, float]]:
             language="python",
             token_count=10,
         )
-        # Descending scores so CV can be controlled via score spread
-        results.append((chunk, float(10 - i)))
+        score = scores[i] if scores is not None else float(10 - i)
+        results.append((chunk, score))
     return results
 
 
@@ -645,3 +648,30 @@ class TestShouldFuse:
         assert len(result) == 2
         assert isinstance(result[0], bool)
         assert isinstance(result[1], str)
+
+    def test_low_avg_idf_forces_fusion(self) -> None:
+        """Low AvgIDF forces fusion regardless of CV and agreement."""
+        # High CV + high agreement would normally skip fusion
+        bm25 = _make_chunks_with_paths(["a.py", "b.py", "c.py"], scores=[10.0, 1.0, 0.5])
+        vec = _make_chunks_with_paths(["a.py", "b.py", "c.py"])
+        apply, reason = should_fuse(bm25, vec, avg_idf=1.0, idf_threshold=2.0)
+        assert apply is True
+        assert "low_idf_force_fusion" in reason
+
+    def test_high_avg_idf_does_not_force_fusion(self) -> None:
+        """High AvgIDF defers to the existing CV/agreement gate."""
+        bm25 = _make_chunks_with_paths(["a.py", "b.py", "c.py"], scores=[10.0, 1.0, 0.5])
+        vec = _make_chunks_with_paths(["a.py", "b.py", "c.py"])
+        # With high IDF, the function falls through to the CV/agreement check
+        apply, reason = should_fuse(
+            bm25, vec, avg_idf=5.0, idf_threshold=2.0, cv_threshold=0.1, agreement_threshold=0.5
+        )
+        assert "low_idf_force_fusion" not in reason
+
+    def test_avg_idf_none_uses_existing_gate(self) -> None:
+        """When avg_idf is None, the existing CV/agreement gate is used unchanged."""
+        bm25 = _make_chunks_with_paths(["a.py", "b.py", "c.py"])
+        vec = _make_chunks_with_paths(["a.py", "b.py", "c.py"])
+        result_no_idf = should_fuse(bm25, vec)
+        result_none_idf = should_fuse(bm25, vec, avg_idf=None)
+        assert result_no_idf == result_none_idf

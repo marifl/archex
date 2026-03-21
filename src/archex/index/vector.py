@@ -286,6 +286,8 @@ def should_fuse(
     bm25_results: list[tuple[CodeChunk, float]],
     vector_results: list[tuple[CodeChunk, float]],
     *,
+    avg_idf: float | None = None,
+    idf_threshold: float = 2.0,
     cv_threshold: float = 0.5,
     agreement_threshold: float = 0.6,
     min_results: int = 3,
@@ -293,6 +295,10 @@ def should_fuse(
     """Decide whether to apply fusion based on BM25 confidence signals.
 
     Returns (should_apply, reason) where reason explains the decision.
+
+    Fusion is FORCED when:
+    - avg_idf is provided and below idf_threshold (query terms are too common
+      in the corpus for BM25 to discriminate — a pre-retrieval QPP signal)
 
     Fusion is SKIPPED when:
     - BM25 score CV > cv_threshold (clear score separation — BM25 is confident)
@@ -307,6 +313,12 @@ def should_fuse(
         return False, f"too_few_bm25_results:{len(bm25_results)}"
     if not vector_results or len(vector_results) < min_results:
         return False, f"too_few_vector_results:{len(vector_results) if vector_results else 0}"
+
+    # Pre-retrieval gate: low AvgIDF means query terms are common across the
+    # corpus — BM25 scores will be flat regardless of result quality.
+    # Force fusion unconditionally to let vector search disambiguate.
+    if avg_idf is not None and avg_idf < idf_threshold:
+        return True, f"low_idf_force_fusion:avg_idf={avg_idf:.3f}"
 
     cv = bm25_score_cv(bm25_results)
 

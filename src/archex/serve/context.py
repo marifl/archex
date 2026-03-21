@@ -323,6 +323,7 @@ def assemble_context(
     modules: list[Module] | None = None,
     trace: PipelineTrace | None = None,
     expansion_min_override: float | None = None,
+    avg_idf: float | None = None,
 ) -> ContextBundle:
     """Assemble a token-budgeted ContextBundle from search results and a dependency graph.
 
@@ -357,7 +358,7 @@ def assemble_context(
 
         # Gate fusion: skip when BM25 is confident and signals agree.
         # Always fuse when BM25 is empty — vector is the only signal.
-        fuse, fuse_reason = should_fuse(search_results, vector_results)
+        fuse, fuse_reason = should_fuse(search_results, vector_results, avg_idf=avg_idf)
         bm25_cv_val = bm25_score_cv(search_results)
 
         if fuse or not search_results:

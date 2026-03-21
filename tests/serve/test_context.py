@@ -791,6 +791,8 @@ def test_is_entry_point_recognizes_known_names() -> None:
     assert not _is_entry_point("tree.go")
     assert not _is_entry_point("mod_helper.rs")
 
+
+# ---------------------------------------------------------------------------
 # Convergent activation gate tests
 # ---------------------------------------------------------------------------
 

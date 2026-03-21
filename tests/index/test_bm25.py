@@ -430,6 +430,8 @@ def test_single_term_query_still_works(
     assert len(results) > 0
     assert results[0][0].file_path == "utils.py"
 
+
+# ---------------------------------------------------------------------------
 # Docstring column tests
 # ---------------------------------------------------------------------------
 
@@ -566,3 +568,36 @@ def test_schema_migration_from_old_fts_schema(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
+# AvgIDF tests
+# ---------------------------------------------------------------------------
+
+
+def test_avg_idf_specific_terms_higher_than_common(
+    store_and_index: tuple[IndexStore, BM25Index],
+) -> None:
+    """Rare terms have higher AvgIDF than common ones."""
+    _, idx = store_and_index
+    # "calculate_sum" appears in 1 chunk; "data" appears in multiple (model, config content)
+    idf_rare = idx.avg_idf("calculate_sum")
+    idf_common = idx.avg_idf("return")  # appears in every function body
+    assert idf_rare > idf_common, (
+        f"Rare term IDF ({idf_rare:.3f}) must exceed common term IDF ({idf_common:.3f})"
+    )
+
+
+def test_avg_idf_empty_query_returns_zero(
+    store_and_index: tuple[IndexStore, BM25Index],
+) -> None:
+    """Empty or all-stopword queries return 0.0."""
+    _, idx = store_and_index
+    assert idx.avg_idf("") == 0.0
+    assert idx.avg_idf("the and for") == 0.0
+
+
+def test_avg_idf_positive_for_indexed_terms(
+    store_and_index: tuple[IndexStore, BM25Index],
+) -> None:
+    """Any non-stopword term that exists in the corpus has positive IDF."""
+    _, idx = store_and_index
+    idf = idx.avg_idf("calculate_sum")
+    assert idf > 0.0
