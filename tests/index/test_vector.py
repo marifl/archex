@@ -663,7 +663,7 @@ class TestShouldFuse:
         bm25 = _make_chunks_with_paths(["a.py", "b.py", "c.py"], scores=[10.0, 1.0, 0.5])
         vec = _make_chunks_with_paths(["a.py", "b.py", "c.py"])
         # With high IDF, the function falls through to the CV/agreement check
-        apply, reason = should_fuse(
+        _, reason = should_fuse(
             bm25, vec, avg_idf=5.0, idf_threshold=2.0, cv_threshold=0.1, agreement_threshold=0.5
         )
         assert "low_idf_force_fusion" not in reason
