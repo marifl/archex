@@ -376,3 +376,44 @@ def confidence_weighted_rrf(
     sorted_ids = sorted(scores, key=lambda cid: scores[cid], reverse=True)
     fused = [(chunk_map[cid], scores[cid]) for cid in sorted_ids]
     return fused, bm25_weight, vector_weight
+
+
+def relative_score_fusion(
+    bm25_results: list[tuple[CodeChunk, float]],
+    vector_results: list[tuple[CodeChunk, float]],
+    bm25_weight: float = 0.5,
+    vector_weight: float = 0.5,
+) -> list[tuple[CodeChunk, float]]:
+    """Fuse BM25 and vector results using Relative Score Fusion.
+
+    Normalizes each signal's scores independently to [0, 1],
+    preserving within-signal score distances. Weighted combination.
+
+    Unlike RRF which uses only rank position, RSF preserves score
+    magnitude — when BM25 has a clear winner (0.80 vs 0.40), that
+    gap is reflected in the fused score. Weaviate benchmarks show
+    ~6% recall improvement over RRF.
+    """
+
+    def _normalize(results: list[tuple[CodeChunk, float]]) -> dict[str, float]:
+        if not results:
+            return {}
+        scores = [s for _, s in results]
+        min_s, max_s = min(scores), max(scores)
+        rng = max_s - min_s
+        if rng < 1e-9:
+            return {c.id: 0.5 for c, _ in results}
+        return {c.id: (s - min_s) / rng for c, s in results}
+
+    bm25_norm = _normalize(bm25_results)
+    vec_norm = _normalize(vector_results)
+    chunk_map = {c.id: c for c, _ in bm25_results}
+    chunk_map.update({c.id: c for c, _ in vector_results})
+
+    all_ids = set(bm25_norm) | set(vec_norm)
+    fused = {
+        cid: bm25_weight * bm25_norm.get(cid, 0.0) + vector_weight * vec_norm.get(cid, 0.0)
+        for cid in all_ids
+    }
+    sorted_ids = sorted(fused, key=lambda cid: fused[cid], reverse=True)
+    return [(chunk_map[cid], fused[cid]) for cid in sorted_ids]

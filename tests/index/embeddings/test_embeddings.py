@@ -277,6 +277,148 @@ class TestFastEmbedder:
         assert isinstance(embedder, Embedder)
 
 
+class TestCodeRankEmbedder:
+    def test_coderank_embedder_init_lazy_loads(self) -> None:
+        """CodeRankEmbedder can be instantiated without loading the model."""
+        from archex.index.embeddings.coderank import CodeRankEmbedder
+
+        embedder = CodeRankEmbedder()
+        assert embedder._model is None  # pyright: ignore[reportPrivateUsage]
+        assert embedder._dimension is None  # pyright: ignore[reportPrivateUsage]
+
+    def test_coderank_default_model_name(self) -> None:
+        from archex.index.embeddings.coderank import HF_MODEL_ID, CodeRankEmbedder
+
+        embedder = CodeRankEmbedder()
+        assert embedder._model_name == HF_MODEL_ID  # pyright: ignore[reportPrivateUsage]
+        assert embedder._model_name == "nomic-ai/CodeRankEmbed"  # pyright: ignore[reportPrivateUsage]
+
+    def test_coderank_query_prefix_prepended(self) -> None:
+        """encode_queries prepends the required prefix before calling encode."""
+        from unittest.mock import MagicMock, patch
+
+        import numpy as np
+
+        from archex.index.embeddings.coderank import (
+            QUERY_PREFIX,
+            CodeRankEmbedder,
+        )
+
+        mock_st_module = MagicMock()
+        mock_model = MagicMock()
+        mock_model.get_sentence_embedding_dimension.return_value = 768
+        mock_model.encode.return_value = np.array([[0.1] * 768])
+        mock_st_module.SentenceTransformer.return_value = mock_model
+
+        with patch.dict("sys.modules", {"sentence_transformers": mock_st_module}):
+            embedder = CodeRankEmbedder()
+            embedder._load_model()  # pyright: ignore[reportPrivateUsage]
+
+        query = "find authentication function"
+        embedder.encode_queries([query])
+
+        call_args = mock_model.encode.call_args
+        encoded_texts = call_args[0][0]
+        assert encoded_texts == [f"{QUERY_PREFIX}{query}"]
+
+    def test_coderank_encode_queries_multiple(self) -> None:
+        """encode_queries prefixes all queries in a batch."""
+        from unittest.mock import MagicMock, patch
+
+        import numpy as np
+
+        from archex.index.embeddings.coderank import QUERY_PREFIX, CodeRankEmbedder
+
+        mock_st_module = MagicMock()
+        mock_model = MagicMock()
+        mock_model.get_sentence_embedding_dimension.return_value = 768
+        mock_model.encode.return_value = np.array([[0.1] * 768, [0.2] * 768])
+        mock_st_module.SentenceTransformer.return_value = mock_model
+
+        with patch.dict("sys.modules", {"sentence_transformers": mock_st_module}):
+            embedder = CodeRankEmbedder()
+            embedder._load_model()  # pyright: ignore[reportPrivateUsage]
+
+        queries = ["foo", "bar"]
+        embedder.encode_queries(queries)
+
+        call_args = mock_model.encode.call_args
+        encoded_texts = call_args[0][0]
+        assert encoded_texts == [f"{QUERY_PREFIX}foo", f"{QUERY_PREFIX}bar"]
+
+    def test_coderank_registry_registration(self) -> None:
+        """default_embedder_registry has a factory registered under 'coderank'."""
+        from archex.index.embeddings import default_embedder_registry
+
+        factory = default_embedder_registry.get("coderank")
+        assert factory is not None
+
+    def test_coderank_factory_returns_embedder_instance(self) -> None:
+        """The coderank factory produces a CodeRankEmbedder instance."""
+        from archex.index.embeddings import default_embedder_registry
+        from archex.index.embeddings.coderank import CodeRankEmbedder
+
+        factory = default_embedder_registry.get("coderank")
+        assert factory is not None
+        embedder = factory()
+        assert isinstance(embedder, CodeRankEmbedder)
+
+    def test_coderank_import_error_raises_archex_index_error(self) -> None:
+        """_load_model raises ArchexIndexError when sentence-transformers is missing."""
+        import builtins
+
+        original_import: Any = builtins.__import__
+
+        def mock_import(name: str, *args: Any, **kwargs: Any) -> object:
+            if name == "sentence_transformers":
+                raise ImportError(f"No module named '{name}'")
+            return original_import(name, *args, **kwargs)
+
+        from archex.index.embeddings.coderank import CodeRankEmbedder
+
+        embedder = CodeRankEmbedder()
+        with (
+            patch("builtins.__import__", side_effect=mock_import),
+            pytest.raises(ArchexIndexError, match="sentence-transformers"),
+        ):
+            embedder._load_model()  # pyright: ignore[reportPrivateUsage]
+
+    def test_coderank_dimension_property_after_load(self) -> None:
+        """dimension property returns correct value after model is loaded."""
+        from unittest.mock import MagicMock, patch
+
+        from archex.index.embeddings.coderank import CodeRankEmbedder
+
+        mock_st_module = MagicMock()
+        mock_model = MagicMock()
+        mock_model.get_sentence_embedding_dimension.return_value = 768
+        mock_st_module.SentenceTransformer.return_value = mock_model
+
+        with patch.dict("sys.modules", {"sentence_transformers": mock_st_module}):
+            embedder = CodeRankEmbedder()
+            embedder._load_model()  # pyright: ignore[reportPrivateUsage]
+
+        assert embedder.dimension == 768
+
+    def test_coderank_load_model_idempotent(self) -> None:
+        """Calling _load_model() twice does not recreate the model."""
+        from unittest.mock import MagicMock, patch
+
+        from archex.index.embeddings.coderank import CodeRankEmbedder
+
+        mock_st_module = MagicMock()
+        mock_model = MagicMock()
+        mock_model.get_sentence_embedding_dimension.return_value = 768
+        mock_st_module.SentenceTransformer.return_value = mock_model
+
+        with patch.dict("sys.modules", {"sentence_transformers": mock_st_module}):
+            embedder = CodeRankEmbedder()
+            embedder._load_model()  # pyright: ignore[reportPrivateUsage]
+            embedder._load_model()  # pyright: ignore[reportPrivateUsage]
+
+        mock_st_module.SentenceTransformer.assert_called_once()
+
+
 class TestAPIEmbedder:
     def test_empty_api_key_raises(self) -> None:
         from archex.index.embeddings.api import APIEmbedder

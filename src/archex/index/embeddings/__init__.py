@@ -42,6 +42,12 @@ def _sentence_tf_factory() -> Embedder:
     return SentenceTransformerEmbedder()
 
 
+def _coderank_factory() -> Embedder:
+    from archex.index.embeddings.coderank import CodeRankEmbedder
+
+    return CodeRankEmbedder()
+
+
 class EmbedderRegistry:
     """Registry for embedder factories with entry-point support."""
 
@@ -99,3 +105,4 @@ default_embedder_registry = EmbedderRegistry()
 default_embedder_registry.register("fastembed", _fastembed_factory)
 default_embedder_registry.register("nomic", _nomic_factory)
 default_embedder_registry.register("sentence_transformers", _sentence_tf_factory)
+default_embedder_registry.register("coderank", _coderank_factory)

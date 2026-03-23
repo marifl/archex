@@ -14,6 +14,7 @@ from archex.index.vector import (
     VectorIndex,
     confidence_weighted_rrf,
     reciprocal_rank_fusion,
+    relative_score_fusion,
     should_fuse,
 )
 from archex.models import CodeChunk, SymbolKind
@@ -675,3 +676,166 @@ class TestShouldFuse:
         result_no_idf = should_fuse(bm25, vec)
         result_none_idf = should_fuse(bm25, vec, avg_idf=None)
         assert result_no_idf == result_none_idf
+
+
+class TestRelativeScoreFusion:
+    """Tests for relative_score_fusion."""
+
+    def test_rsf_preserves_score_magnitude(self) -> None:
+        # Arrange: chunk_a is BM25-only top scorer; chunk_b appears in both
+        chunk_a = CodeChunk(
+            id="a.py:fn:0",
+            content="def fn_a(): pass",
+            file_path="a.py",
+            start_line=1,
+            end_line=1,
+            symbol_name="fn_a",
+            symbol_kind=SymbolKind.FUNCTION,
+            language="python",
+            token_count=5,
+        )
+        chunk_b = CodeChunk(
+            id="b.py:fn:1",
+            content="def fn_b(): pass",
+            file_path="b.py",
+            start_line=1,
+            end_line=1,
+            symbol_name="fn_b",
+            symbol_kind=SymbolKind.FUNCTION,
+            language="python",
+            token_count=5,
+        )
+        chunk_c = CodeChunk(
+            id="c.py:fn:2",
+            content="def fn_c(): pass",
+            file_path="c.py",
+            start_line=1,
+            end_line=1,
+            symbol_name="fn_c",
+            symbol_kind=SymbolKind.FUNCTION,
+            language="python",
+            token_count=5,
+        )
+        chunk_d = CodeChunk(
+            id="d.py:fn:3",
+            content="def fn_d(): pass",
+            file_path="d.py",
+            start_line=1,
+            end_line=1,
+            symbol_name="fn_d",
+            symbol_kind=SymbolKind.FUNCTION,
+            language="python",
+            token_count=5,
+        )
+        bm25_results: list[tuple[CodeChunk, float]] = [
+            (chunk_a, 10.0),
+            (chunk_b, 5.0),
+            (chunk_c, 1.0),
+        ]
+        vector_results: list[tuple[CodeChunk, float]] = [
+            (chunk_b, 0.9),
+            (chunk_c, 0.8),
+            (chunk_d, 0.7),
+        ]
+
+        # Act
+        fused = relative_score_fusion(bm25_results, vector_results)
+        ids = [c.id for c, _ in fused]
+
+        # Assert: chunk_a (BM25-only dominant) and chunk_b (both signals) in top 2
+        assert chunk_a.id in ids[:2]
+        assert chunk_b.id in ids[:2]
+
+    def test_rsf_equal_weights(self) -> None:
+        # Arrange: identical scores in both signals
+        chunk_a = CodeChunk(
+            id="a.py:fn:0",
+            content="def fn_a(): pass",
+            file_path="a.py",
+            start_line=1,
+            end_line=1,
+            symbol_name="fn_a",
+            symbol_kind=SymbolKind.FUNCTION,
+            language="python",
+            token_count=5,
+        )
+        chunk_b = CodeChunk(
+            id="b.py:fn:1",
+            content="def fn_b(): pass",
+            file_path="b.py",
+            start_line=1,
+            end_line=1,
+            symbol_name="fn_b",
+            symbol_kind=SymbolKind.FUNCTION,
+            language="python",
+            token_count=5,
+        )
+        results: list[tuple[CodeChunk, float]] = [(chunk_a, 1.0), (chunk_b, 0.5)]
+
+        # Act: fuse with equal weights using same list for both signals
+        fused = relative_score_fusion(results, results, bm25_weight=0.5, vector_weight=0.5)
+        scores = {c.id: s for c, s in fused}
+
+        # Assert: symmetric — both get the same normalized + weighted score
+        # chunk_a is top in both signals (normalized to 1.0), chunk_b to 0.0
+        assert scores[chunk_a.id] > scores[chunk_b.id]
+
+    def test_rsf_empty_bm25_returns_vector_signal(self) -> None:
+        chunk_a = CodeChunk(
+            id="a.py:fn:0",
+            content="def fn_a(): pass",
+            file_path="a.py",
+            start_line=1,
+            end_line=1,
+            symbol_name="fn_a",
+            symbol_kind=SymbolKind.FUNCTION,
+            language="python",
+            token_count=5,
+        )
+        vector_results: list[tuple[CodeChunk, float]] = [(chunk_a, 0.9)]
+
+        fused = relative_score_fusion([], vector_results)
+        assert len(fused) == 1
+        assert fused[0][0].id == chunk_a.id
+
+    def test_rsf_empty_vector_returns_bm25_signal(self) -> None:
+        chunk_a = CodeChunk(
+            id="a.py:fn:0",
+            content="def fn_a(): pass",
+            file_path="a.py",
+            start_line=1,
+            end_line=1,
+            symbol_name="fn_a",
+            symbol_kind=SymbolKind.FUNCTION,
+            language="python",
+            token_count=5,
+        )
+        bm25_results: list[tuple[CodeChunk, float]] = [(chunk_a, 5.0)]
+
+        fused = relative_score_fusion(bm25_results, [])
+        assert len(fused) == 1
+        assert fused[0][0].id == chunk_a.id
+
+    def test_rsf_flat_scores_normalize_to_half(self) -> None:
+        # Arrange: all equal scores → normalized to 0.5 per signal
+        chunks = [
+            CodeChunk(
+                id=f"f{i}.py:fn:{i}",
+                content=f"def fn_{i}(): pass",
+                file_path=f"f{i}.py",
+                start_line=1,
+                end_line=1,
+                symbol_name=f"fn_{i}",
+                symbol_kind=SymbolKind.FUNCTION,
+                language="python",
+                token_count=5,
+            )
+            for i in range(3)
+        ]
+        bm25_results: list[tuple[CodeChunk, float]] = [(c, 1.0) for c in chunks]
+        vector_results: list[tuple[CodeChunk, float]] = [(c, 1.0) for c in chunks]
+
+        fused = relative_score_fusion(bm25_results, vector_results)
+        # All chunks get 0.5*0.5 + 0.5*0.5 = 0.5 each
+        for _, score in fused:
+            assert abs(score - 0.5) < 1e-9
