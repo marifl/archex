@@ -25,24 +25,24 @@
     {
       "task_id": "archex_adapter_registry",
       "strategy": "archex_query",
-      "recall": 0.6666666666666666,
-      "precision": 0.25,
-      "f1_score": 0.36363636363636365,
-      "mrr": 1.0,
-      "ndcg": 0.6508205185601091,
-      "map_score": 0.4666666666666666,
-      "token_efficiency": 0.5785876993166287
-    },
-    {
-      "task_id": "archex_adapter_registry",
-      "strategy": "archex_query_hybrid",
       "recall": 0.3333333333333333,
-      "precision": 0.125,
-      "f1_score": 0.18181818181818182,
+      "precision": 0.25,
+      "f1_score": 0.28571428571428575,
       "mrr": 1.0,
       "ndcg": 0.46927872602275644,
       "map_score": 0.3333333333333333,
-      "token_efficiency": 0.19540542994642696
+      "token_efficiency": 0.4095688748685594
+    },
+    {
+      "task_id": "archex_adapter_registry",
+      "strategy": "archex_query_fusion",
+      "recall": 0.3333333333333333,
+      "precision": 0.25,
+      "f1_score": 0.28571428571428575,
+      "mrr": 1.0,
+      "ndcg": 0.46927872602275644,
+      "map_score": 0.3333333333333333,
+      "token_efficiency": 0.2658106960950764
     },
     {
       "task_id": "archex_delta_indexing",
@@ -63,30 +63,30 @@
       "f1_score": 0.0008472182999152783,
       "mrr": 0.001375515818431912,
       "ndcg": 0.0,
-      "map_score": 0.0015503745400937826,
+      "map_score": 0.0015502815362116147,
       "token_efficiency": 1.0
     },
     {
       "task_id": "archex_delta_indexing",
       "strategy": "archex_query",
       "recall": 0.3333333333333333,
-      "precision": 0.125,
-      "f1_score": 0.18181818181818182,
+      "precision": 0.25,
+      "f1_score": 0.28571428571428575,
       "mrr": 1.0,
       "ndcg": 0.46927872602275644,
       "map_score": 0.3333333333333333,
-      "token_efficiency": 0.3781912192419556
+      "token_efficiency": 0.6698961937716263
     },
     {
       "task_id": "archex_delta_indexing",
-      "strategy": "archex_query_hybrid",
+      "strategy": "archex_query_fusion",
       "recall": 0.3333333333333333,
-      "precision": 0.16666666666666666,
-      "f1_score": 0.2222222222222222,
+      "precision": 0.5,
+      "f1_score": 0.4,
       "mrr": 1.0,
       "ndcg": 0.46927872602275644,
       "map_score": 0.3333333333333333,
-      "token_efficiency": 0.6845587003851951
+      "token_efficiency": 0.8286646722871907
     },
     {
       "task_id": "archex_graph_expansion",
@@ -114,23 +114,23 @@
       "task_id": "archex_graph_expansion",
       "strategy": "archex_query",
       "recall": 0.6666666666666666,
-      "precision": 0.3333333333333333,
-      "f1_score": 0.4444444444444444,
+      "precision": 0.5,
+      "f1_score": 0.5714285714285715,
       "mrr": 1.0,
-      "ndcg": 0.7653606369886217,
-      "map_score": 0.6666666666666666,
-      "token_efficiency": 0.3606007067137809
+      "ndcg": 0.6713860725233041,
+      "map_score": 0.5,
+      "token_efficiency": 0.43953518069212105
     },
     {
       "task_id": "archex_graph_expansion",
-      "strategy": "archex_query_hybrid",
+      "strategy": "archex_query_fusion",
       "recall": 0.6666666666666666,
-      "precision": 0.25,
-      "f1_score": 0.36363636363636365,
+      "precision": 0.5,
+      "f1_score": 0.5714285714285715,
       "mrr": 1.0,
-      "ndcg": 0.7653606369886217,
-      "map_score": 0.6666666666666666,
-      "token_efficiency": 0.2198980960042907
+      "ndcg": 0.7039180890341347,
+      "map_score": 0.5555555555555555,
+      "token_efficiency": 0.46630089517759166
     },
     {
       "task_id": "archex_pattern_detection",
@@ -158,23 +158,23 @@
       "task_id": "archex_pattern_detection",
       "strategy": "archex_query",
       "recall": 1.0,
-      "precision": 0.25,
-      "f1_score": 0.4,
+      "precision": 0.5,
+      "f1_score": 0.6666666666666666,
       "mrr": 1.0,
       "ndcg": 1.0,
       "map_score": 1.0,
-      "token_efficiency": 0.6045977011494252
+      "token_efficiency": 0.6754560060485776
     },
     {
       "task_id": "archex_pattern_detection",
-      "strategy": "archex_query_hybrid",
-      "recall": 1.0,
-      "precision": 0.2857142857142857,
-      "f1_score": 0.4444444444444445,
+      "strategy": "archex_query_fusion",
+      "recall": 0.5,
+      "precision": 0.25,
+      "f1_score": 0.3333333333333333,
       "mrr": 1.0,
-      "ndcg": 0.8772153153380493,
-      "map_score": 0.75,
-      "token_efficiency": 0.6275297389154951
+      "ndcg": 0.6131471927654584,
+      "map_score": 0.5,
+      "token_efficiency": 0.5833942050158266
     },
     {
       "task_id": "archex_query_pipeline",
@@ -201,24 +201,24 @@
     {
       "task_id": "archex_query_pipeline",
       "strategy": "archex_query",
-      "recall": 0.0,
-      "precision": 0.0,
-      "f1_score": 0.0,
-      "mrr": 0.0,
-      "ndcg": 0.0,
-      "map_score": 0.0,
-      "token_efficiency": 0.41583181936153646
+      "recall": 0.3333333333333333,
+      "precision": 0.25,
+      "f1_score": 0.28571428571428575,
+      "mrr": 0.25,
+      "ndcg": 0.20210734650054757,
+      "map_score": 0.08333333333333333,
+      "token_efficiency": 0.29888299254091366
     },
     {
       "task_id": "archex_query_pipeline",
-      "strategy": "archex_query_hybrid",
+      "strategy": "archex_query_fusion",
       "recall": 0.3333333333333333,
-      "precision": 0.125,
-      "f1_score": 0.18181818181818182,
-      "mrr": 0.14285714285714285,
-      "ndcg": 0.15642624200758548,
-      "map_score": 0.047619047619047616,
-      "token_efficiency": 0.19284416228080528
+      "precision": 0.25,
+      "f1_score": 0.28571428571428575,
+      "mrr": 0.5,
+      "ndcg": 0.2960819109658652,
+      "map_score": 0.16666666666666666,
+      "token_efficiency": 0.24756724599498575
     },
     {
       "task_id": "archex_scoring",
@@ -245,24 +245,24 @@
     {
       "task_id": "archex_scoring",
       "strategy": "archex_query",
-      "recall": 0.6666666666666666,
+      "recall": 0.3333333333333333,
       "precision": 0.25,
-      "f1_score": 0.36363636363636365,
-      "mrr": 1.0,
-      "ndcg": 0.6257049680303419,
-      "map_score": 0.42857142857142855,
-      "token_efficiency": 0.28726422327863826
+      "f1_score": 0.28571428571428575,
+      "mrr": 0.5,
+      "ndcg": 0.2960819109658652,
+      "map_score": 0.16666666666666666,
+      "token_efficiency": 0.38038491958871606
     },
     {
       "task_id": "archex_scoring",
-      "strategy": "archex_query_hybrid",
+      "strategy": "archex_query_fusion",
       "recall": 0.6666666666666666,
-      "precision": 0.25,
-      "f1_score": 0.36363636363636365,
-      "mrr": 1.0,
-      "ndcg": 0.7039180890341347,
-      "map_score": 0.5555555555555555,
-      "token_efficiency": 0.2721915285451197
+      "precision": 0.5,
+      "f1_score": 0.5714285714285715,
+      "mrr": 0.3333333333333333,
+      "ndcg": 0.4367467095119258,
+      "map_score": 0.27777777777777773,
+      "token_efficiency": 0.26139738276278435
     },
     {
       "task_id": "celery_task_dispatch",
@@ -289,24 +289,24 @@
     {
       "task_id": "celery_task_dispatch",
       "strategy": "archex_query",
-      "recall": 0.3333333333333333,
-      "precision": 0.14285714285714285,
-      "f1_score": 0.2,
-      "mrr": 0.25,
-      "ndcg": 0.20210734650054757,
-      "map_score": 0.08333333333333333,
-      "token_efficiency": 0.38373564565268337
+      "recall": 0.0,
+      "precision": 0.0,
+      "f1_score": 0.0,
+      "mrr": 0.0,
+      "ndcg": 0.0,
+      "map_score": 0.0,
+      "token_efficiency": 1.1450798990748527
     },
     {
       "task_id": "celery_task_dispatch",
-      "strategy": "archex_query_hybrid",
+      "strategy": "archex_query_fusion",
       "recall": 0.3333333333333333,
-      "precision": 0.14285714285714285,
-      "f1_score": 0.2,
-      "mrr": 1.0,
-      "ndcg": 0.46927872602275644,
-      "map_score": 0.3333333333333333,
-      "token_efficiency": 0.1541137844857157
+      "precision": 0.25,
+      "f1_score": 0.28571428571428575,
+      "mrr": 0.5,
+      "ndcg": 0.2960819109658652,
+      "map_score": 0.16666666666666666,
+      "token_efficiency": 0.23463506016283595
     },
     {
       "task_id": "click_decorators",
@@ -334,23 +334,23 @@
       "task_id": "click_decorators",
       "strategy": "archex_query",
       "recall": 0.6666666666666666,
-      "precision": 0.2857142857142857,
-      "f1_score": 0.4,
+      "precision": 0.5,
+      "f1_score": 0.5714285714285715,
       "mrr": 1.0,
-      "ndcg": 0.7653606369886217,
-      "map_score": 0.6666666666666666,
-      "token_efficiency": 0.16672442261043277
+      "ndcg": 0.6713860725233041,
+      "map_score": 0.5,
+      "token_efficiency": 0.26001396559385515
     },
     {
       "task_id": "click_decorators",
-      "strategy": "archex_query_hybrid",
+      "strategy": "archex_query_fusion",
       "recall": 0.6666666666666666,
       "precision": 1.0,
       "f1_score": 0.8,
       "mrr": 1.0,
       "ndcg": 0.7653606369886217,
       "map_score": 0.6666666666666666,
-      "token_efficiency": 0.27132480110688345
+      "token_efficiency": 0.28177101349014183
     },
     {
       "task_id": "django_middleware",
@@ -378,23 +378,23 @@
       "task_id": "django_middleware",
       "strategy": "archex_query",
       "recall": 0.3333333333333333,
-      "precision": 0.16666666666666666,
-      "f1_score": 0.2222222222222222,
+      "precision": 0.5,
+      "f1_score": 0.4,
       "mrr": 1.0,
       "ndcg": 0.46927872602275644,
       "map_score": 0.3333333333333333,
-      "token_efficiency": 0.7791416880768864
+      "token_efficiency": 1.2761465663673865
     },
     {
       "task_id": "django_middleware",
-      "strategy": "archex_query_hybrid",
+      "strategy": "archex_query_fusion",
       "recall": 0.3333333333333333,
-      "precision": 0.125,
-      "f1_score": 0.18181818181818182,
-      "mrr": 1.0,
-      "ndcg": 0.46927872602275644,
-      "map_score": 0.3333333333333333,
-      "token_efficiency": 0.3605824682814302
+      "precision": 0.25,
+      "f1_score": 0.28571428571428575,
+      "mrr": 0.3333333333333333,
+      "ndcg": 0.23463936301137822,
+      "map_score": 0.1111111111111111,
+      "token_efficiency": 0.7737837000309885
     },
     {
       "task_id": "django_orm_queries",
@@ -421,24 +421,24 @@
     {
       "task_id": "django_orm_queries",
       "strategy": "archex_query",
-      "recall": 0.0,
-      "precision": 0.0,
-      "f1_score": 0.0,
-      "mrr": 0.0,
-      "ndcg": 0.0,
-      "map_score": 0.0,
-      "token_efficiency": 0.2756405922520452
+      "recall": 0.3333333333333333,
+      "precision": 0.25,
+      "f1_score": 0.28571428571428575,
+      "mrr": 0.5,
+      "ndcg": 0.2960819109658652,
+      "map_score": 0.16666666666666666,
+      "token_efficiency": 0.18981062976612662
     },
     {
       "task_id": "django_orm_queries",
-      "strategy": "archex_query_hybrid",
-      "recall": 0.0,
-      "precision": 0.0,
-      "f1_score": 0.0,
-      "mrr": 0.0,
-      "ndcg": 0.0,
-      "map_score": 0.0,
-      "token_efficiency": 0.0704087921117502
+      "strategy": "archex_query_fusion",
+      "recall": 0.6666666666666666,
+      "precision": 0.5,
+      "f1_score": 0.5714285714285715,
+      "mrr": 0.5,
+      "ndcg": 0.49818925746641285,
+      "map_score": 0.3333333333333333,
+      "token_efficiency": 0.08836013130658414
     },
     {
       "task_id": "express_error_handling",
@@ -465,24 +465,24 @@
     {
       "task_id": "express_error_handling",
       "strategy": "archex_query",
-      "recall": 0.6666666666666666,
+      "recall": 0.3333333333333333,
       "precision": 0.25,
-      "f1_score": 0.36363636363636365,
+      "f1_score": 0.28571428571428575,
       "mrr": 1.0,
-      "ndcg": 0.7653606369886217,
-      "map_score": 0.6666666666666666,
-      "token_efficiency": 0.30312002664791443
+      "ndcg": 0.46927872602275644,
+      "map_score": 0.3333333333333333,
+      "token_efficiency": 0.7507552870090635
     },
     {
       "task_id": "express_error_handling",
-      "strategy": "archex_query_hybrid",
-      "recall": 0.6666666666666666,
-      "precision": 0.25,
-      "f1_score": 0.36363636363636365,
-      "mrr": 1.0,
-      "ndcg": 0.7039180890341347,
-      "map_score": 0.5555555555555555,
-      "token_efficiency": 0.29560630095547274
+      "strategy": "archex_query_fusion",
+      "recall": 0.3333333333333333,
+      "precision": 0.3333333333333333,
+      "f1_score": 0.3333333333333333,
+      "mrr": 0.3333333333333333,
+      "ndcg": 0.23463936301137822,
+      "map_score": 0.1111111111111111,
+      "token_efficiency": 0.6006600660066007
     },
     {
       "task_id": "express_middleware",
@@ -510,23 +510,23 @@
       "task_id": "express_middleware",
       "strategy": "archex_query",
       "recall": 0.3333333333333333,
-      "precision": 0.125,
-      "f1_score": 0.18181818181818182,
-      "mrr": 0.25,
-      "ndcg": 0.20210734650054757,
-      "map_score": 0.08333333333333333,
-      "token_efficiency": 0.331082515819425
+      "precision": 0.25,
+      "f1_score": 0.28571428571428575,
+      "mrr": 0.5,
+      "ndcg": 0.2960819109658652,
+      "map_score": 0.16666666666666666,
+      "token_efficiency": 0.42515161187360356
     },
     {
       "task_id": "express_middleware",
-      "strategy": "archex_query_hybrid",
-      "recall": 0.3333333333333333,
-      "precision": 0.14285714285714285,
-      "f1_score": 0.2,
-      "mrr": 0.3333333333333333,
-      "ndcg": 0.23463936301137822,
-      "map_score": 0.1111111111111111,
-      "token_efficiency": 0.39186285044446617
+      "strategy": "archex_query_fusion",
+      "recall": 0.0,
+      "precision": 0.0,
+      "f1_score": 0.0,
+      "mrr": 0.0,
+      "ndcg": 0.0,
+      "map_score": 0.0,
+      "token_efficiency": 0.14108937070333158
     },
     {
       "task_id": "fastapi_dependency_injection",
@@ -554,23 +554,23 @@
       "task_id": "fastapi_dependency_injection",
       "strategy": "archex_query",
       "recall": 0.3333333333333333,
-      "precision": 0.25,
-      "f1_score": 0.28571428571428575,
+      "precision": 0.5,
+      "f1_score": 0.4,
       "mrr": 1.0,
       "ndcg": 0.46927872602275644,
       "map_score": 0.3333333333333333,
-      "token_efficiency": 0.12427552723410712
+      "token_efficiency": 0.1252787818195801
     },
     {
       "task_id": "fastapi_dependency_injection",
-      "strategy": "archex_query_hybrid",
+      "strategy": "archex_query_fusion",
       "recall": 0.3333333333333333,
       "precision": 0.3333333333333333,
       "f1_score": 0.3333333333333333,
       "mrr": 0.5,
       "ndcg": 0.2960819109658652,
       "map_score": 0.16666666666666666,
-      "token_efficiency": 0.12136522522247493
+      "token_efficiency": 0.12226796633771266
     },
     {
       "task_id": "fastapi_routing",
@@ -598,23 +598,23 @@
       "task_id": "fastapi_routing",
       "strategy": "archex_query",
       "recall": 0.6666666666666666,
-      "precision": 0.4,
-      "f1_score": 0.5,
+      "precision": 0.5,
+      "f1_score": 0.5714285714285715,
       "mrr": 1.0,
-      "ndcg": 0.6713860725233041,
-      "map_score": 0.5,
-      "token_efficiency": 0.09916039902309814
+      "ndcg": 0.7653606369886217,
+      "map_score": 0.6666666666666666,
+      "token_efficiency": 0.10948582746714489
     },
     {
       "task_id": "fastapi_routing",
-      "strategy": "archex_query_hybrid",
+      "strategy": "archex_query_fusion",
       "recall": 0.6666666666666666,
-      "precision": 0.25,
-      "f1_score": 0.36363636363636365,
+      "precision": 0.5,
+      "f1_score": 0.5714285714285715,
       "mrr": 1.0,
-      "ndcg": 0.6257049680303419,
-      "map_score": 0.42857142857142855,
-      "token_efficiency": 0.08201235692899272
+      "ndcg": 0.6713860725233041,
+      "map_score": 0.5,
+      "token_efficiency": 0.11926798169954249
     },
     {
       "task_id": "flask_blueprints",
@@ -641,24 +641,24 @@
     {
       "task_id": "flask_blueprints",
       "strategy": "archex_query",
-      "recall": 0.6666666666666666,
-      "precision": 0.4,
-      "f1_score": 0.5,
-      "mrr": 0.5,
-      "ndcg": 0.49818925746641285,
-      "map_score": 0.3333333333333333,
-      "token_efficiency": 0.2238491433576003
+      "recall": 1.0,
+      "precision": 0.75,
+      "f1_score": 0.8571428571428571,
+      "mrr": 1.0,
+      "ndcg": 0.9060254355346823,
+      "map_score": 0.8055555555555555,
+      "token_efficiency": 0.29665349334686925
     },
     {
       "task_id": "flask_blueprints",
-      "strategy": "archex_query_hybrid",
-      "recall": 0.6666666666666666,
-      "precision": 0.3333333333333333,
-      "f1_score": 0.4444444444444444,
-      "mrr": 1.0,
-      "ndcg": 0.7039180890341347,
-      "map_score": 0.5555555555555555,
-      "token_efficiency": 0.2412244415553717
+      "strategy": "archex_query_fusion",
+      "recall": 1.0,
+      "precision": 0.75,
+      "f1_score": 0.8571428571428571,
+      "mrr": 0.5,
+      "ndcg": 0.7328286204777911,
+      "map_score": 0.6388888888888888,
+      "token_efficiency": 0.2954207606685762
     },
     {
       "task_id": "gin_routing",
@@ -685,24 +685,24 @@
     {
       "task_id": "gin_routing",
       "strategy": "archex_query",
-      "recall": 1.0,
+      "recall": 0.6666666666666666,
       "precision": 0.5,
-      "f1_score": 0.6666666666666666,
+      "f1_score": 0.5714285714285715,
       "mrr": 1.0,
-      "ndcg": 0.8710785440003369,
-      "map_score": 0.7222222222222222,
-      "token_efficiency": 0.24088449776523171
+      "ndcg": 0.7039180890341347,
+      "map_score": 0.5555555555555555,
+      "token_efficiency": 0.39138952599388377
     },
     {
       "task_id": "gin_routing",
-      "strategy": "archex_query_hybrid",
-      "recall": 0.6666666666666666,
-      "precision": 0.4,
-      "f1_score": 0.5,
+      "strategy": "archex_query_fusion",
+      "recall": 1.0,
+      "precision": 0.75,
+      "f1_score": 0.8571428571428571,
       "mrr": 0.5,
-      "ndcg": 0.4776237035032179,
-      "map_score": 0.3,
-      "token_efficiency": 0.2424506387921022
+      "ndcg": 0.7328286204777911,
+      "map_score": 0.6388888888888888,
+      "token_efficiency": 0.2533639143730887
     },
     {
       "task_id": "go_gin_middleware",
@@ -729,24 +729,24 @@
     {
       "task_id": "go_gin_middleware",
       "strategy": "archex_query",
-      "recall": 1.0,
-      "precision": 0.375,
-      "f1_score": 0.5454545454545454,
+      "recall": 0.6666666666666666,
+      "precision": 0.5,
+      "f1_score": 0.5714285714285715,
       "mrr": 0.5,
-      "ndcg": 0.7122630665145961,
-      "map_score": 0.5888888888888889,
-      "token_efficiency": 0.15227224237251974
+      "ndcg": 0.5307212739772434,
+      "map_score": 0.38888888888888884,
+      "token_efficiency": 0.26493011435832275
     },
     {
       "task_id": "go_gin_middleware",
-      "strategy": "archex_query_hybrid",
-      "recall": 1.0,
-      "precision": 0.375,
-      "f1_score": 0.5454545454545454,
+      "strategy": "archex_query_fusion",
+      "recall": 0.6666666666666666,
+      "precision": 0.5,
+      "f1_score": 0.5714285714285715,
       "mrr": 1.0,
-      "ndcg": 0.9325210919548239,
-      "map_score": 0.8333333333333334,
-      "token_efficiency": 0.06861531896735652
+      "ndcg": 0.7653606369886217,
+      "map_score": 0.6666666666666666,
+      "token_efficiency": 0.2620658749719919
     },
     {
       "task_id": "httpx_pooling",
@@ -774,23 +774,23 @@
       "task_id": "httpx_pooling",
       "strategy": "archex_query",
       "recall": 1.0,
-      "precision": 0.375,
-      "f1_score": 0.5454545454545454,
+      "precision": 0.75,
+      "f1_score": 0.8571428571428571,
       "mrr": 1.0,
-      "ndcg": 0.8278123145308894,
-      "map_score": 0.6428571428571429,
-      "token_efficiency": 0.301600767187961
+      "ndcg": 1.0,
+      "map_score": 1.0,
+      "token_efficiency": 0.3836336336336336
     },
     {
       "task_id": "httpx_pooling",
-      "strategy": "archex_query_hybrid",
+      "strategy": "archex_query_fusion",
       "recall": 1.0,
-      "precision": 0.5,
-      "f1_score": 0.6666666666666666,
+      "precision": 0.75,
+      "f1_score": 0.8571428571428571,
       "mrr": 1.0,
-      "ndcg": 0.9325210919548239,
-      "map_score": 0.8333333333333334,
-      "token_efficiency": 0.37874722427831237
+      "ndcg": 0.9060254355346823,
+      "map_score": 0.8055555555555555,
+      "token_efficiency": 0.375670188954245
     },
     {
       "task_id": "mini_redis_async",
@@ -817,24 +817,24 @@
     {
       "task_id": "mini_redis_async",
       "strategy": "archex_query",
-      "recall": 1.0,
+      "recall": 0.6666666666666666,
       "precision": 0.5,
-      "f1_score": 0.6666666666666666,
-      "mrr": 0.5,
-      "ndcg": 0.6447841584694202,
-      "map_score": 0.4666666666666666,
-      "token_efficiency": 0.5746590346971946
+      "f1_score": 0.5714285714285715,
+      "mrr": 1.0,
+      "ndcg": 0.6713860725233041,
+      "map_score": 0.5,
+      "token_efficiency": 0.7204250071150745
     },
     {
       "task_id": "mini_redis_async",
-      "strategy": "archex_query_hybrid",
-      "recall": 1.0,
-      "precision": 0.375,
-      "f1_score": 0.5454545454545454,
-      "mrr": 0.5,
-      "ndcg": 0.6256646589861505,
-      "map_score": 0.425,
-      "token_efficiency": 0.4393751409880442
+      "strategy": "archex_query_fusion",
+      "recall": 0.6666666666666666,
+      "precision": 0.5,
+      "f1_score": 0.5714285714285715,
+      "mrr": 1.0,
+      "ndcg": 0.7653606369886217,
+      "map_score": 0.6666666666666666,
+      "token_efficiency": 0.5884702580157616
     },
     {
       "task_id": "pydantic_validators",
@@ -861,24 +861,24 @@
     {
       "task_id": "pydantic_validators",
       "strategy": "archex_query",
-      "recall": 0.6666666666666666,
-      "precision": 0.25,
-      "f1_score": 0.36363636363636365,
-      "mrr": 0.16666666666666666,
-      "ndcg": 0.3235866969737877,
-      "map_score": 0.15079365079365079,
-      "token_efficiency": 0.138473522886996
-    },
-    {
-      "task_id": "pydantic_validators",
-      "strategy": "archex_query_hybrid",
       "recall": 0.3333333333333333,
-      "precision": 0.25,
-      "f1_score": 0.28571428571428575,
+      "precision": 0.3333333333333333,
+      "f1_score": 0.3333333333333333,
       "mrr": 0.3333333333333333,
       "ndcg": 0.23463936301137822,
       "map_score": 0.1111111111111111,
-      "token_efficiency": 0.17348332835247407
+      "token_efficiency": 0.2684607810961602
+    },
+    {
+      "task_id": "pydantic_validators",
+      "strategy": "archex_query_fusion",
+      "recall": 0.3333333333333333,
+      "precision": 0.3333333333333333,
+      "f1_score": 0.3333333333333333,
+      "mrr": 1.0,
+      "ndcg": 0.46927872602275644,
+      "map_score": 0.3333333333333333,
+      "token_efficiency": 0.1996952717978964
     },
     {
       "task_id": "pytest_fixtures",
@@ -905,24 +905,24 @@
     {
       "task_id": "pytest_fixtures",
       "strategy": "archex_query",
-      "recall": 0.5,
-      "precision": 0.14285714285714285,
-      "f1_score": 0.22222222222222224,
-      "mrr": 1.0,
-      "ndcg": 0.6131471927654584,
-      "map_score": 0.5,
-      "token_efficiency": 0.11890805085945685
+      "recall": 1.0,
+      "precision": 0.5,
+      "f1_score": 0.6666666666666666,
+      "mrr": 0.3333333333333333,
+      "ndcg": 0.5706417189553201,
+      "map_score": 0.41666666666666663,
+      "token_efficiency": 0.08963085588975125
     },
     {
       "task_id": "pytest_fixtures",
-      "strategy": "archex_query_hybrid",
+      "strategy": "archex_query_fusion",
       "recall": 0.5,
-      "precision": 0.125,
-      "f1_score": 0.2,
-      "mrr": 1.0,
-      "ndcg": 0.6131471927654584,
-      "map_score": 0.5,
-      "token_efficiency": 0.0904607106826589
+      "precision": 0.3333333333333333,
+      "f1_score": 0.4,
+      "mrr": 0.5,
+      "ndcg": 0.38685280723454163,
+      "map_score": 0.25,
+      "token_efficiency": 0.2193364760295295
     },
     {
       "task_id": "react_hooks",
@@ -950,23 +950,23 @@
       "task_id": "react_hooks",
       "strategy": "archex_query",
       "recall": 0.3333333333333333,
-      "precision": 0.125,
-      "f1_score": 0.18181818181818182,
-      "mrr": 0.14285714285714285,
-      "ndcg": 0.15642624200758548,
-      "map_score": 0.047619047619047616,
-      "token_efficiency": 0.11320911202034722
+      "precision": 0.25,
+      "f1_score": 0.28571428571428575,
+      "mrr": 0.25,
+      "ndcg": 0.20210734650054757,
+      "map_score": 0.08333333333333333,
+      "token_efficiency": 0.12357812357812357
     },
     {
       "task_id": "react_hooks",
-      "strategy": "archex_query_hybrid",
+      "strategy": "archex_query_fusion",
       "recall": 0.0,
       "precision": 0.0,
       "f1_score": 0.0,
       "mrr": 0.0,
       "ndcg": 0.0,
       "map_score": 0.0,
-      "token_efficiency": 0.30471241289713
+      "token_efficiency": 0.08621254904449169
     },
     {
       "task_id": "requests_sessions",
@@ -993,24 +993,24 @@
     {
       "task_id": "requests_sessions",
       "strategy": "archex_query",
-      "recall": 1.0,
-      "precision": 0.42857142857142855,
-      "f1_score": 0.6,
+      "recall": 0.6666666666666666,
+      "precision": 0.5,
+      "f1_score": 0.5714285714285715,
       "mrr": 1.0,
-      "ndcg": 0.86034433104172,
-      "map_score": 0.6984126984126983,
-      "token_efficiency": 0.2654142425325836
+      "ndcg": 0.7653606369886217,
+      "map_score": 0.6666666666666666,
+      "token_efficiency": 0.5941322073383809
     },
     {
       "task_id": "requests_sessions",
-      "strategy": "archex_query_hybrid",
-      "recall": 1.0,
-      "precision": 0.42857142857142855,
-      "f1_score": 0.6,
+      "strategy": "archex_query_fusion",
+      "recall": 0.6666666666666666,
+      "precision": 0.6666666666666666,
+      "f1_score": 0.6666666666666666,
       "mrr": 1.0,
-      "ndcg": 0.9674679834891693,
-      "map_score": 0.9166666666666666,
-      "token_efficiency": 0.33754855773204395
+      "ndcg": 0.7653606369886217,
+      "map_score": 0.6666666666666666,
+      "token_efficiency": 0.6548247719635142
     },
     {
       "task_id": "rust_tokio_runtime",
@@ -1037,24 +1037,24 @@
     {
       "task_id": "rust_tokio_runtime",
       "strategy": "archex_query",
-      "recall": 0.3333333333333333,
-      "precision": 0.14285714285714285,
-      "f1_score": 0.2,
-      "mrr": 0.3333333333333333,
-      "ndcg": 0.23463936301137822,
-      "map_score": 0.1111111111111111,
-      "token_efficiency": 0.23933122880860516
+      "recall": 0.0,
+      "precision": 0.0,
+      "f1_score": 0.0,
+      "mrr": 0.0,
+      "ndcg": 0.0,
+      "map_score": 0.0,
+      "token_efficiency": 0.28211009174311924
     },
     {
       "task_id": "rust_tokio_runtime",
-      "strategy": "archex_query_hybrid",
+      "strategy": "archex_query_fusion",
       "recall": 0.3333333333333333,
-      "precision": 0.14285714285714285,
-      "f1_score": 0.2,
-      "mrr": 0.2,
-      "ndcg": 0.18154179253735267,
-      "map_score": 0.06666666666666667,
-      "token_efficiency": 0.23596736880555216
+      "precision": 0.3333333333333333,
+      "f1_score": 0.3333333333333333,
+      "mrr": 1.0,
+      "ndcg": 0.46927872602275644,
+      "map_score": 0.3333333333333333,
+      "token_efficiency": 0.38320702333608464
     },
     {
       "task_id": "sqlalchemy_sessions",
@@ -1082,25 +1082,25 @@
       "task_id": "sqlalchemy_sessions",
       "strategy": "archex_query",
       "recall": 0.3333333333333333,
-      "precision": 0.14285714285714285,
-      "f1_score": 0.2,
+      "precision": 0.25,
+      "f1_score": 0.28571428571428575,
       "mrr": 0.5,
       "ndcg": 0.2960819109658652,
       "map_score": 0.16666666666666666,
-      "token_efficiency": 0.0700842997132954
+      "token_efficiency": 0.09503613673863029
     },
     {
       "task_id": "sqlalchemy_sessions",
-      "strategy": "archex_query_hybrid",
+      "strategy": "archex_query_fusion",
       "recall": 0.3333333333333333,
-      "precision": 0.125,
-      "f1_score": 0.18181818181818182,
-      "mrr": 1.0,
-      "ndcg": 0.46927872602275644,
-      "map_score": 0.3333333333333333,
-      "token_efficiency": 0.06835957084127144
+      "precision": 0.25,
+      "f1_score": 0.28571428571428575,
+      "mrr": 0.5,
+      "ndcg": 0.2960819109658652,
+      "map_score": 0.16666666666666666,
+      "token_efficiency": 0.07391977584427076
     }
   ],
-  "created_at": "2026-03-12T09:34:14.250110+00:00",
+  "created_at": "2026-03-23T04:54:28.610643+00:00",
   "archex_version": ""
 }
