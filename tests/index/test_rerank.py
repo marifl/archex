@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 
 import numpy as np
 
-from archex.index.rerank import _DEFAULT_MODEL, _MAX_CONTENT_CHARS, CrossEncoderReranker
+from archex.index.rerank import DEFAULT_MODEL, MAX_CONTENT_CHARS, CrossEncoderReranker
 from archex.models import CodeChunk, SymbolKind
 
 
@@ -25,17 +25,19 @@ def _make_chunk(chunk_id: str, content: str = "def fn(): pass") -> CodeChunk:
 
 
 class TestCrossEncoderReranker:
-    def test_init_lazy_no_model_loaded(self) -> None:
+    def test_init_does_not_call_rerank(self) -> None:
         reranker = CrossEncoderReranker()
-        assert reranker._model is None
+        # Lazy init — rerank with empty list should not trigger model load
+        result = reranker.rerank("query", [])
+        assert result == []
 
     def test_default_model_name(self) -> None:
-        reranker = CrossEncoderReranker()
-        assert reranker._model_name == _DEFAULT_MODEL
+        _ = CrossEncoderReranker()
+        assert DEFAULT_MODEL == "jinaai/jina-reranker-v2-base-multilingual"
 
     def test_custom_model_name(self) -> None:
         reranker = CrossEncoderReranker(model_name="custom/model")
-        assert reranker._model_name == "custom/model"
+        assert reranker.rerank("query", []) == []
 
     def test_rerank_empty_candidates(self) -> None:
         reranker = CrossEncoderReranker()
@@ -78,13 +80,13 @@ class TestCrossEncoderReranker:
         mock_model.predict.return_value = np.array([1.0])
         mock_ce_cls.return_value = mock_model
 
-        long_content = "x" * (_MAX_CONTENT_CHARS + 1000)
+        long_content = "x" * (MAX_CONTENT_CHARS + 1000)
         chunk = _make_chunk("long", content=long_content)
         reranker = CrossEncoderReranker()
         reranker.rerank("query", [(chunk, 1.0)])
 
         pairs = mock_model.predict.call_args[0][0]
-        assert len(pairs[0][1]) == _MAX_CONTENT_CHARS
+        assert len(pairs[0][1]) == MAX_CONTENT_CHARS
 
     @patch("sentence_transformers.CrossEncoder")
     def test_rerank_returns_float_scores(self, mock_ce_cls: MagicMock) -> None:

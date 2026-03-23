@@ -10,8 +10,8 @@ from archex.exceptions import ArchexIndexError
 
 logger = logging.getLogger(__name__)
 
-_HF_MODEL_ID = "nomic-ai/CodeRankEmbed"
-_QUERY_PREFIX = "Represent this query for searching relevant code: "
+HF_MODEL_ID = "nomic-ai/CodeRankEmbed"
+QUERY_PREFIX = "Represent this query for searching relevant code: "
 
 
 def _best_device() -> str:
@@ -41,7 +41,7 @@ class CodeRankEmbedder:
 
     def __init__(
         self,
-        model_name: str = _HF_MODEL_ID,
+        model_name: str = HF_MODEL_ID,
         batch_size: int = 32,
     ) -> None:
         self._model_name = model_name
@@ -82,7 +82,7 @@ class CodeRankEmbedder:
         """Encode texts into embedding vectors.
 
         For document encoding (indexing), texts are passed as-is.
-        For query encoding, the caller should prepend _QUERY_PREFIX.
+        For query encoding, the caller should prepend QUERY_PREFIX.
         """
         self._load_model()
 
@@ -96,7 +96,7 @@ class CodeRankEmbedder:
 
     def encode_queries(self, queries: list[str]) -> list[list[float]]:
         """Encode queries with the required prefix for asymmetric search."""
-        prefixed = [f"{_QUERY_PREFIX}{q}" for q in queries]
+        prefixed = [f"{QUERY_PREFIX}{q}" for q in queries]
         return self.encode(prefixed)
 
     @property

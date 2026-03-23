@@ -287,10 +287,10 @@ class TestCodeRankEmbedder:
         assert embedder._dimension is None  # pyright: ignore[reportPrivateUsage]
 
     def test_coderank_default_model_name(self) -> None:
-        from archex.index.embeddings.coderank import _HF_MODEL_ID, CodeRankEmbedder
+        from archex.index.embeddings.coderank import HF_MODEL_ID, CodeRankEmbedder
 
         embedder = CodeRankEmbedder()
-        assert embedder._model_name == _HF_MODEL_ID  # pyright: ignore[reportPrivateUsage]
+        assert embedder._model_name == HF_MODEL_ID  # pyright: ignore[reportPrivateUsage]
         assert embedder._model_name == "nomic-ai/CodeRankEmbed"  # pyright: ignore[reportPrivateUsage]
 
     def test_coderank_query_prefix_prepended(self) -> None:
@@ -300,7 +300,7 @@ class TestCodeRankEmbedder:
         import numpy as np
 
         from archex.index.embeddings.coderank import (
-            _QUERY_PREFIX,
+            QUERY_PREFIX,
             CodeRankEmbedder,
         )
 
@@ -319,7 +319,7 @@ class TestCodeRankEmbedder:
 
         call_args = mock_model.encode.call_args
         encoded_texts = call_args[0][0]
-        assert encoded_texts == [f"{_QUERY_PREFIX}{query}"]
+        assert encoded_texts == [f"{QUERY_PREFIX}{query}"]
 
     def test_coderank_encode_queries_multiple(self) -> None:
         """encode_queries prefixes all queries in a batch."""
@@ -327,7 +327,7 @@ class TestCodeRankEmbedder:
 
         import numpy as np
 
-        from archex.index.embeddings.coderank import _QUERY_PREFIX, CodeRankEmbedder
+        from archex.index.embeddings.coderank import QUERY_PREFIX, CodeRankEmbedder
 
         mock_st_module = MagicMock()
         mock_model = MagicMock()
@@ -344,7 +344,7 @@ class TestCodeRankEmbedder:
 
         call_args = mock_model.encode.call_args
         encoded_texts = call_args[0][0]
-        assert encoded_texts == [f"{_QUERY_PREFIX}foo", f"{_QUERY_PREFIX}bar"]
+        assert encoded_texts == [f"{QUERY_PREFIX}foo", f"{QUERY_PREFIX}bar"]
 
     def test_coderank_registry_registration(self) -> None:
         """default_embedder_registry has a factory registered under 'coderank'."""

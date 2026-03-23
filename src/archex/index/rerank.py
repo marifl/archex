@@ -13,11 +13,11 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-_DEFAULT_MODEL = "jinaai/jina-reranker-v2-base-multilingual"
+DEFAULT_MODEL = "jinaai/jina-reranker-v2-base-multilingual"
 
 # Maximum content length passed to the cross-encoder per chunk.
 # Jina Reranker v2 has a 1024-token context window.
-_MAX_CONTENT_CHARS = 3072
+MAX_CONTENT_CHARS = 3072
 
 
 class CrossEncoderReranker:
@@ -29,7 +29,7 @@ class CrossEncoderReranker:
     candidates to improve precision without affecting recall.
     """
 
-    def __init__(self, model_name: str = _DEFAULT_MODEL) -> None:
+    def __init__(self, model_name: str = DEFAULT_MODEL) -> None:
         self._model_name = model_name
         self._model: Any = None
 
@@ -74,7 +74,7 @@ class CrossEncoderReranker:
 
         self._load_model()
 
-        pairs = [(query, chunk.content[:_MAX_CONTENT_CHARS]) for chunk, _ in candidates]
+        pairs = [(query, chunk.content[:MAX_CONTENT_CHARS]) for chunk, _ in candidates]
         scores: list[float] = self._model.predict(pairs).tolist()
 
         scored = sorted(
