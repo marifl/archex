@@ -336,7 +336,14 @@ def assemble_context(
     for expansion gating (useful for architecture-broad queries with flat BM25 scores).
     """
     assembly_start = time.perf_counter()
-    weights = scoring_weights or ScoringWeights()
+    # Intent-based weight routing: when no explicit weights are provided,
+    # classify the query intent and select optimized weight presets.
+    if scoring_weights is None:
+        from archex.serve.intent import weights_for_query
+
+        weights = weights_for_query(question)
+    else:
+        weights = scoring_weights
 
     strategy = "hybrid+graph" if vector_results else "bm25+graph"
 
