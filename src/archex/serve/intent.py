@@ -65,7 +65,10 @@ _IDENTIFIER_RE = re.compile(
 )
 
 _ARCHITECTURE_PATTERNS = [
-    re.compile(r"\bhow\s+does\b"),  # "how does X work"
+    # "how does X work" is too broad — matches implementation queries like
+    # "How does pydantic chain validators?" which are relevance-heavy.
+    # Only match when combined with architecture-specific nouns.
+    re.compile(r"\bhow\s+does\b.*\b(?:pipeline|middleware|routing|system|architecture)\b"),
     re.compile(r"\barchitectur"),  # "architecture"
     re.compile(r"\bpipeline\b"),  # "pipeline"
     re.compile(r"\bmiddleware\b"),  # "middleware"
