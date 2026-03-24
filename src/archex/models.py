@@ -142,6 +142,8 @@ class IndexConfig(BaseModel):
     vector_mode: VectorMode = VectorMode.RAW
     surrogate_version: str = "v1"
     retrieval_policy: RetrievalPolicy = RetrievalPolicy.AUTO
+    rerank: bool = False
+    rerank_model: str | None = None
     chunk_max_tokens: int = 500
     chunk_min_tokens: int = 50
     token_encoding: str = "cl100k_base"

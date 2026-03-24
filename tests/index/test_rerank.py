@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import numpy as np
 
@@ -24,10 +24,17 @@ def _make_chunk(chunk_id: str, content: str = "def fn(): pass") -> CodeChunk:
     )
 
 
+def _reranker_with_mock() -> tuple[CrossEncoderReranker, MagicMock]:
+    """Create a CrossEncoderReranker with a mock model injected (bypasses _load_model)."""
+    reranker = CrossEncoderReranker()
+    mock_model = MagicMock()
+    reranker._model = mock_model  # pyright: ignore[reportPrivateUsage]
+    return reranker, mock_model
+
+
 class TestCrossEncoderReranker:
     def test_init_does_not_call_rerank(self) -> None:
         reranker = CrossEncoderReranker()
-        # Lazy init — rerank with empty list should not trigger model load
         result = reranker.rerank("query", [])
         assert result == []
 
@@ -44,13 +51,10 @@ class TestCrossEncoderReranker:
         result = reranker.rerank("query", [])
         assert result == []
 
-    @patch("sentence_transformers.CrossEncoder")
-    def test_rerank_sorts_by_cross_encoder_score(self, mock_ce_cls: MagicMock) -> None:
-        mock_model = MagicMock()
+    def test_rerank_sorts_by_cross_encoder_score(self) -> None:
+        reranker, mock_model = _reranker_with_mock()
         mock_model.predict.return_value = np.array([0.1, 0.9, 0.5])
-        mock_ce_cls.return_value = mock_model
 
-        reranker = CrossEncoderReranker()
         chunks = [_make_chunk("a"), _make_chunk("b"), _make_chunk("c")]
         candidates = [(c, float(i)) for i, c in enumerate(chunks)]
 
@@ -61,40 +65,31 @@ class TestCrossEncoderReranker:
         assert result[1][0].id == "c"
         assert result[2][0].id == "a"
 
-    @patch("sentence_transformers.CrossEncoder")
-    def test_rerank_respects_top_k(self, mock_ce_cls: MagicMock) -> None:
-        mock_model = MagicMock()
+    def test_rerank_respects_top_k(self) -> None:
+        reranker, mock_model = _reranker_with_mock()
         mock_model.predict.return_value = np.array([0.9, 0.5, 0.1])
-        mock_ce_cls.return_value = mock_model
 
-        reranker = CrossEncoderReranker()
         chunks = [_make_chunk("a"), _make_chunk("b"), _make_chunk("c")]
         candidates = [(c, float(i)) for i, c in enumerate(chunks)]
 
         result = reranker.rerank("query", candidates, top_k=2)
         assert len(result) == 2
 
-    @patch("sentence_transformers.CrossEncoder")
-    def test_rerank_truncates_content(self, mock_ce_cls: MagicMock) -> None:
-        mock_model = MagicMock()
+    def test_rerank_truncates_content(self) -> None:
+        reranker, mock_model = _reranker_with_mock()
         mock_model.predict.return_value = np.array([1.0])
-        mock_ce_cls.return_value = mock_model
 
         long_content = "x" * (MAX_CONTENT_CHARS + 1000)
         chunk = _make_chunk("long", content=long_content)
-        reranker = CrossEncoderReranker()
         reranker.rerank("query", [(chunk, 1.0)])
 
         pairs = mock_model.predict.call_args[0][0]
         assert len(pairs[0][1]) == MAX_CONTENT_CHARS
 
-    @patch("sentence_transformers.CrossEncoder")
-    def test_rerank_returns_float_scores(self, mock_ce_cls: MagicMock) -> None:
-        mock_model = MagicMock()
+    def test_rerank_returns_float_scores(self) -> None:
+        reranker, mock_model = _reranker_with_mock()
         mock_model.predict.return_value = np.array([0.75])
-        mock_ce_cls.return_value = mock_model
 
-        reranker = CrossEncoderReranker()
         result = reranker.rerank("query", [(_make_chunk("a"), 1.0)])
         assert isinstance(result[0][1], float)
         assert result[0][1] == 0.75
