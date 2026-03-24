@@ -98,6 +98,7 @@ if TYPE_CHECKING:
 
     from archex.index.embeddings.base import Embedder
     from archex.models import ComparisonResult
+    from archex.providers.base import LLMProvider
 
 # ---------------------------------------------------------------------------
 # Acquisition + Indexing — shared helpers for all entry points
@@ -579,6 +580,7 @@ def _bm25_search_with_boosts(
     store: IndexStore,
     question: str,
     top_k: int,
+    augment_provider: LLMProvider | None = None,
 ) -> tuple[
     list[tuple[CodeChunk, float]],
     list[tuple[CodeChunk, float]],
@@ -588,8 +590,15 @@ def _bm25_search_with_boosts(
 
     Returns (search_results, path_boost, symbol_seeds) as separate lists so
     callers can record individual counts for observability, then combine them.
+
+    When augment_provider is given, the BM25 query is expanded with
+    LLM-generated code identifiers (ReCo-style augmentation). Path boost
+    and symbol seeds use the original question to avoid false matches.
     """
-    results = bm25.search(question, top_k=top_k)
+    from archex.serve.query import augment_query
+
+    bm25_question = augment_query(question, augment_provider)
+    results = bm25.search(bm25_question, top_k=top_k)
     bm25_ids = {c.id for c, _ in results}
     max_bm25 = max((s for _, s in results), default=1.0)
     path_boost = _file_path_boost(store, question, bm25_ids, max_bm25_score=max_bm25)
@@ -872,6 +881,14 @@ def query(
                     return pt
 
                 bm25 = BM25Index(store)
+                # Query augmentation provider: expand BM25 queries with
+                # LLM-generated code identifiers when a provider is configured.
+                _augment_provider: LLMProvider | None = None
+                if config.provider:
+                    try:
+                        _augment_provider = get_provider(config.provider, config.provider_config)
+                    except (ValueError, Exception):
+                        logger.debug("Query augmentation provider unavailable, skipping")
                 stored_edges = store.get_edges()
                 graph = DependencyGraph.from_edges(stored_edges)
 
@@ -908,7 +925,11 @@ def query(
                     )
                     if index_config.bm25:
                         _bm25_raw, path_boost, symbol_seeds = _bm25_search_with_boosts(
-                            bm25, store, question, top_k
+                            bm25,
+                            store,
+                            question,
+                            top_k,
+                            augment_provider=_augment_provider,
                         )
                         search_results = _bm25_raw + path_boost + symbol_seeds
                     else:
@@ -964,6 +985,19 @@ def query(
                         )
                     )
                 query_avg_idf = bm25.avg_idf(question) if vector_results is not None else None
+                # Cross-encoder reranker: opt-in via index_config.rerank
+                _reranker = None
+                if index_config.rerank:
+                    from archex.index.rerank import (
+                        DEFAULT_MODEL as _RERANK_DEFAULT,
+                    )
+                    from archex.index.rerank import (
+                        CrossEncoderReranker,
+                    )
+
+                    _reranker = CrossEncoderReranker(
+                        model_name=index_config.rerank_model or _RERANK_DEFAULT
+                    )
                 bundle = assemble_context(
                     search_results=search_results,
                     graph=graph,
@@ -974,6 +1008,7 @@ def query(
                     scoring_weights=scoring_weights,
                     trace=trace,
                     avg_idf=query_avg_idf,
+                    reranker=_reranker,
                 )
                 bundle.retrieval_metadata.vector_mode = index_config.vector_mode
                 bundle.retrieval_metadata.surrogate_version = (
@@ -1081,6 +1116,12 @@ def query(
 
         try:
             bm25 = BM25Index(store)
+            _augment_provider_miss: LLMProvider | None = None
+            if config.provider:
+                try:
+                    _augment_provider_miss = get_provider(config.provider, config.provider_config)
+                except (ValueError, Exception):
+                    logger.debug("Query augmentation provider unavailable, skipping")
             store.insert_chunks(all_chunks)
             store.insert_chunk_surrogates(chunk_surrogates)
             edges = graph.file_edges()
@@ -1203,7 +1244,11 @@ def query(
                 )
                 if index_config.bm25:
                     _bm25_raw, path_boost, symbol_seeds_miss = _bm25_search_with_boosts(
-                        bm25, store, question, top_k
+                        bm25,
+                        store,
+                        question,
+                        top_k,
+                        augment_provider=_augment_provider_miss,
                     )
                     search_results = _bm25_raw + path_boost + symbol_seeds_miss
                 else:
@@ -1258,6 +1303,18 @@ def query(
                     )
                 )
             query_avg_idf_miss = bm25.avg_idf(question) if vector_results_miss is not None else None
+            _reranker_miss = None
+            if index_config.rerank:
+                from archex.index.rerank import (
+                    DEFAULT_MODEL as _RERANK_DEFAULT,
+                )
+                from archex.index.rerank import (
+                    CrossEncoderReranker,
+                )
+
+                _reranker_miss = CrossEncoderReranker(
+                    model_name=index_config.rerank_model or _RERANK_DEFAULT
+                )
             bundle = assemble_context(
                 search_results=search_results,
                 graph=graph,
@@ -1268,6 +1325,7 @@ def query(
                 scoring_weights=scoring_weights,
                 trace=trace,
                 avg_idf=query_avg_idf_miss,
+                reranker=_reranker_miss,
             )
             bundle.retrieval_metadata.vector_mode = index_config.vector_mode
             bundle.retrieval_metadata.surrogate_version = (

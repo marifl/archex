@@ -324,6 +324,7 @@ def assemble_context(
     trace: PipelineTrace | None = None,
     expansion_min_override: float | None = None,
     avg_idf: float | None = None,
+    reranker: object | None = None,
 ) -> ContextBundle:
     """Assemble a token-budgeted ContextBundle from search results and a dependency graph.
 
@@ -598,6 +599,24 @@ def assemble_context(
                 },
             )
         )
+
+    # --- Cross-encoder reranking phase (opt-in) ---
+    # When a reranker is provided, re-score all candidates using full
+    # query-chunk attention. This replaces BM25/fusion scores with
+    # cross-encoder relevance scores for downstream ranking.
+    if reranker is not None:
+        from archex.index.rerank import CrossEncoderReranker
+
+        if isinstance(reranker, CrossEncoderReranker):
+            candidate_list = [
+                (chunk, bm25_by_id.get(chunk.id, 0.0)) for chunk in candidate_map.values()
+            ]
+            reranked = reranker.rerank(question, candidate_list, top_k=20)
+            candidate_map = {chunk.id: chunk for chunk, _ in reranked}
+            max_rerank = max((s for _, s in reranked), default=1.0) or 1.0
+            bm25_by_id = {chunk.id: score / max_rerank for chunk, score in reranked}
+            candidates_after_expansion = len(candidate_map)
+            logger.debug("Cross-encoder reranked %d candidates", len(reranked))
 
     # --- Scoring phase ---
     _scoring_start = time.perf_counter_ns()
