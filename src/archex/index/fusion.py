@@ -152,7 +152,7 @@ def confidence_weighted_rrf(
     return fused, bm25_weight, vector_weight
 
 
-def _normalize_scores(
+def normalize_scores(
     results: list[tuple[CodeChunk, float]],
 ) -> dict[str, float]:
     """Min-max normalize scores to [0, 1], preserving within-signal distances."""
@@ -166,7 +166,7 @@ def _normalize_scores(
     return {c.id: (s - min_s) / rng for c, s in results}
 
 
-def _adaptive_rsf_weights(
+def adaptive_rsf_weights(
     signal_agreement: float,
     bm25_cv: float,
 ) -> tuple[float, float]:
@@ -202,8 +202,8 @@ def relative_score_fusion(
     magnitude — when BM25 has a clear winner (0.80 vs 0.40), that
     gap is reflected in the fused score.
     """
-    bm25_norm = _normalize_scores(bm25_results)
-    vec_norm = _normalize_scores(vector_results)
+    bm25_norm = normalize_scores(bm25_results)
+    vec_norm = normalize_scores(vector_results)
     chunk_map = {c.id: c for c, _ in bm25_results}
     chunk_map.update({c.id: c for c, _ in vector_results})
 
@@ -227,6 +227,6 @@ def adaptive_rsf(
     Combines RSF's score-magnitude preservation with confidence-aware
     weight scheduling. Returns (fused_results, bm25_weight, vector_weight).
     """
-    bm25_weight, vector_weight = _adaptive_rsf_weights(signal_agreement, bm25_cv)
+    bm25_weight, vector_weight = adaptive_rsf_weights(signal_agreement, bm25_cv)
     fused = relative_score_fusion(bm25_results, vector_results, bm25_weight, vector_weight)
     return fused, bm25_weight, vector_weight

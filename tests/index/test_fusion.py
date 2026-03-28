@@ -5,11 +5,11 @@ from __future__ import annotations
 import pytest
 
 from archex.index.fusion import (
-    _adaptive_rsf_weights,
-    _normalize_scores,
     adaptive_rsf,
+    adaptive_rsf_weights,
     bm25_score_cv,
     confidence_weighted_rrf,
+    normalize_scores,
     reciprocal_rank_fusion,
     relative_score_fusion,
     should_fuse,
@@ -149,59 +149,59 @@ class TestShouldFuse:
 
 
 # ---------------------------------------------------------------------------
-# _normalize_scores
+# normalize_scores
 # ---------------------------------------------------------------------------
 
 
 class TestNormalizeScores:
     def test_normalize_spread_scores(self) -> None:
         results = _results([("a", "a.py", 10.0), ("b", "b.py", 5.0), ("c", "c.py", 0.0)])
-        norm = _normalize_scores(results)
-        assert norm["a"] == pytest.approx(1.0)
-        assert norm["b"] == pytest.approx(0.5)
-        assert norm["c"] == pytest.approx(0.0)
+        norm = normalize_scores(results)
+        assert norm["a"] == pytest.approx(1.0)  # pyright: ignore[reportUnknownMemberType]
+        assert norm["b"] == pytest.approx(0.5)  # pyright: ignore[reportUnknownMemberType]
+        assert norm["c"] == pytest.approx(0.0)  # pyright: ignore[reportUnknownMemberType]
 
     def test_normalize_flat_scores(self) -> None:
         results = _results([("a", "a.py", 5.0), ("b", "b.py", 5.0)])
-        norm = _normalize_scores(results)
-        assert norm["a"] == pytest.approx(0.5)
-        assert norm["b"] == pytest.approx(0.5)
+        norm = normalize_scores(results)
+        assert norm["a"] == pytest.approx(0.5)  # pyright: ignore[reportUnknownMemberType]
+        assert norm["b"] == pytest.approx(0.5)  # pyright: ignore[reportUnknownMemberType]
 
     def test_normalize_empty(self) -> None:
-        assert _normalize_scores([]) == {}
+        assert normalize_scores([]) == {}
 
 
 # ---------------------------------------------------------------------------
-# _adaptive_rsf_weights
+# adaptive_rsf_weights
 # ---------------------------------------------------------------------------
 
 
 class TestAdaptiveRSFWeights:
     def test_high_agreement(self) -> None:
-        bw, vw = _adaptive_rsf_weights(signal_agreement=0.8, bm25_cv=0.5)
+        bw, vw = adaptive_rsf_weights(signal_agreement=0.8, bm25_cv=0.5)
         assert bw == 0.60
         assert vw == 0.40
 
     def test_medium_agreement_high_cv(self) -> None:
-        bw, vw = _adaptive_rsf_weights(signal_agreement=0.5, bm25_cv=0.5)
+        bw, vw = adaptive_rsf_weights(signal_agreement=0.5, bm25_cv=0.5)
         assert bw == 0.50
         assert vw == 0.50
 
     def test_medium_agreement_low_cv(self) -> None:
-        bw, vw = _adaptive_rsf_weights(signal_agreement=0.5, bm25_cv=0.2)
+        bw, vw = adaptive_rsf_weights(signal_agreement=0.5, bm25_cv=0.2)
         assert bw == 0.40
         assert vw == 0.60
 
     def test_low_agreement(self) -> None:
-        bw, vw = _adaptive_rsf_weights(signal_agreement=0.2, bm25_cv=0.5)
+        bw, vw = adaptive_rsf_weights(signal_agreement=0.2, bm25_cv=0.5)
         assert bw == 0.35
         assert vw == 0.65
 
     def test_weights_sum_to_one(self) -> None:
         for agreement in [0.1, 0.3, 0.5, 0.7, 0.9]:
             for cv in [0.1, 0.3, 0.5, 0.8]:
-                bw, vw = _adaptive_rsf_weights(agreement, cv)
-                assert bw + vw == pytest.approx(1.0)
+                bw, vw = adaptive_rsf_weights(agreement, cv)
+                assert bw + vw == pytest.approx(1.0)  # pyright: ignore[reportUnknownMemberType]
 
 
 # ---------------------------------------------------------------------------
@@ -258,7 +258,7 @@ class TestAdaptiveRSF:
         bm25 = _results([("a", "a.py", 10.0), ("b", "b.py", 5.0), ("c", "c.py", 1.0)])
         vec = _results([("a", "a.py", 0.9), ("d", "d.py", 0.8), ("c", "c.py", 0.3)])
         fused, bw, vw = adaptive_rsf(bm25, vec, signal_agreement=0.5, bm25_cv=0.4)
-        assert bw + vw == pytest.approx(1.0)
+        assert bw + vw == pytest.approx(1.0)  # pyright: ignore[reportUnknownMemberType]
         assert len(fused) == 4  # a, b, c, d
 
     def test_high_agreement_weights(self) -> None:

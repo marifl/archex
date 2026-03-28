@@ -23,7 +23,6 @@ from archex.index.fusion import (  # noqa: F401, E402
     confidence_weighted_rrf,
     reciprocal_rank_fusion,
     relative_score_fusion,
-    should_fuse,
 )
 
 
