@@ -296,7 +296,7 @@ class BM25Index:
         clean = [t.strip('"').lower() for t in tokens]
         boosted: list[tuple[CodeChunk, float]] = []
         for chunk, score in results:
-            parts = set(re.split(r'[/\\._]', chunk.file_path.lower()))
+            parts = set(re.split(r"[/\\._]", chunk.file_path.lower()))
             matches = sum(1 for t in clean if t in parts)
             multiplier = 1.0 + _PATH_TERM_BONUS * matches
             boosted.append((chunk, score * multiplier))
