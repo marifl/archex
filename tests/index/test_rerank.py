@@ -48,8 +48,6 @@ class TestIsAvailable:
 
     def test_true_when_mocked(self) -> None:
         with patch("archex.index.rerank.is_available", return_value=True):
-            from archex.index.rerank import is_available as _is_available
-
             # Direct import bypasses mock; test the real function shape
             assert isinstance(is_available(), bool)
 
