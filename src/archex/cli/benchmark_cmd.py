@@ -68,6 +68,18 @@ def benchmark_cmd() -> None:
     default=False,
     help="Include the experimental cross_layer_fusion strategy.",
 )
+@click.option(
+    "--rerank",
+    is_flag=True,
+    default=False,
+    help="Include the fusion+rerank strategy (archex_query_fusion_rerank).",
+)
+@click.option(
+    "--augment",
+    is_flag=True,
+    default=False,
+    help="Include the fusion+rerank+augment strategy (archex_query_fusion_rerank_augment).",
+)
 def run_cmd(
     output_dir: str,
     task_id: str | None,
@@ -75,6 +87,8 @@ def run_cmd(
     tasks_dir: str,
     query_fusion: bool,
     cross_layer_fusion: bool,
+    rerank: bool,
+    augment: bool,
 ) -> None:
     """Run benchmarks across strategies."""
     strategies: list[Strategy] = list(DEFAULT_STRATEGIES)
@@ -86,6 +100,18 @@ def run_cmd(
         strategies.append(Strategy.ARCHEX_QUERY_FUSION)
     if cross_layer_fusion and Strategy.CROSS_LAYER_FUSION not in strategies:
         strategies.append(Strategy.CROSS_LAYER_FUSION)
+    if rerank:
+        if Strategy.ARCHEX_QUERY_FUSION not in strategies:
+            strategies.append(Strategy.ARCHEX_QUERY_FUSION)
+        if Strategy.ARCHEX_QUERY_FUSION_RERANK not in strategies:
+            strategies.append(Strategy.ARCHEX_QUERY_FUSION_RERANK)
+    if augment:
+        if Strategy.ARCHEX_QUERY_FUSION not in strategies:
+            strategies.append(Strategy.ARCHEX_QUERY_FUSION)
+        if Strategy.ARCHEX_QUERY_FUSION_RERANK not in strategies:
+            strategies.append(Strategy.ARCHEX_QUERY_FUSION_RERANK)
+        if Strategy.ARCHEX_QUERY_FUSION_RERANK_AUGMENT not in strategies:
+            strategies.append(Strategy.ARCHEX_QUERY_FUSION_RERANK_AUGMENT)
 
     reports = run_all(
         tasks_dir=Path(tasks_dir),
