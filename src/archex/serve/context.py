@@ -30,13 +30,13 @@ _TYPE_LIKE = {SymbolKind.CLASS, SymbolKind.TYPE, SymbolKind.INTERFACE}
 IMPORT_TARGET_DECAY = 0.65
 
 # Importers (files that depend on the seed) get a weaker boost — consumers, not deps.
-IMPORTER_DECAY = 0.20
+IMPORTER_DECAY = 0.35
 
 MIN_SCORE_RATIO = 0.30
 
-MAX_EXPANSION_FILES = 5
+MAX_EXPANSION_FILES = 8
 
-MAX_FILES = 6
+MAX_FILES = 8
 
 # Files reached by ≥2 independent seeds receive a convergence bonus —
 # multiple structural paths to a file corroborate its relevance.
@@ -65,7 +65,7 @@ _ENTRY_POINT_NAMES = frozenset(
 SEED_EXPANSION_MIN = 0.05
 
 # Files below this fraction of the top file's aggregate score are excluded.
-FILE_SCORE_CUTOFF = 0.15
+FILE_SCORE_CUTOFF = 0.10
 
 
 def estimate_tokens(chunk: CodeChunk) -> int:
@@ -278,9 +278,9 @@ def _adaptive_max_files(
         return default
     ratio = top / median
     if ratio > 3.0:
-        return 4
-    if ratio > 2.0:
         return 5
+    if ratio > 2.0:
+        return 6
     return default
 
 
@@ -718,7 +718,7 @@ def assemble_context(
     file_agg: dict[str, float] = {}
     for rc in ranked:
         fp = rc.chunk.file_path
-        file_agg[fp] = file_agg.get(fp, 0.0) + rc.final_score
+        file_agg[fp] = max(file_agg.get(fp, 0.0), rc.final_score)
     sorted_files = sorted(file_agg.items(), key=lambda x: -x[1])
     top_file_score = sorted_files[0][1] if sorted_files else 0.0
     score_cutoff = top_file_score * FILE_SCORE_CUTOFF
