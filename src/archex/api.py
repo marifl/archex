@@ -97,6 +97,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
     from archex.index.embeddings.base import Embedder
+    from archex.index.rerank import CrossEncoderReranker
     from archex.models import ComparisonResult
     from archex.providers.base import LLMProvider
 
@@ -388,6 +389,26 @@ def _build_adapters() -> dict[str, LanguageAdapter]:
 # ---------------------------------------------------------------------------
 # Retrieval — search augmentation helpers (path boost, symbol seeds, reranking)
 # ---------------------------------------------------------------------------
+
+
+def _maybe_reranker(index_config: IndexConfig) -> CrossEncoderReranker | None:
+    """Return a CrossEncoderReranker when reranking should be active.
+
+    Reranking activates when explicitly enabled via index_config.rerank,
+    or auto-enabled when sentence-transformers is installed.
+    """
+    from archex.index.rerank import (
+        DEFAULT_MODEL,
+        CrossEncoderReranker,
+        is_available,
+    )
+
+    if index_config.rerank or is_available():
+        return CrossEncoderReranker(
+            model_name=index_config.rerank_model or DEFAULT_MODEL,
+        )
+
+    return None
 
 
 def _compute_top_k(total_chunks: int) -> int:
@@ -985,19 +1006,9 @@ def query(
                         )
                     )
                 query_avg_idf = bm25.avg_idf(question) if vector_results is not None else None
-                # Cross-encoder reranker: opt-in via index_config.rerank
-                _reranker = None
-                if index_config.rerank:
-                    from archex.index.rerank import (
-                        DEFAULT_MODEL as _RERANK_DEFAULT,
-                    )
-                    from archex.index.rerank import (
-                        CrossEncoderReranker,
-                    )
-
-                    _reranker = CrossEncoderReranker(
-                        model_name=index_config.rerank_model or _RERANK_DEFAULT
-                    )
+                # Cross-encoder reranker: enabled explicitly via index_config.rerank,
+                # or auto-enabled when sentence-transformers is installed.
+                _reranker = _maybe_reranker(index_config)
                 bundle = assemble_context(
                     search_results=search_results,
                     graph=graph,
@@ -1303,18 +1314,7 @@ def query(
                     )
                 )
             query_avg_idf_miss = bm25.avg_idf(question) if vector_results_miss is not None else None
-            _reranker_miss = None
-            if index_config.rerank:
-                from archex.index.rerank import (
-                    DEFAULT_MODEL as _RERANK_DEFAULT,
-                )
-                from archex.index.rerank import (
-                    CrossEncoderReranker,
-                )
-
-                _reranker_miss = CrossEncoderReranker(
-                    model_name=index_config.rerank_model or _RERANK_DEFAULT
-                )
+            _reranker_miss = _maybe_reranker(index_config)
             bundle = assemble_context(
                 search_results=search_results,
                 graph=graph,

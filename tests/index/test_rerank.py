@@ -1,4 +1,4 @@
-"""Tests for CrossEncoderReranker."""
+"""Tests for CrossEncoderReranker and auto-enable logic."""
 
 from __future__ import annotations
 
@@ -6,8 +6,14 @@ from unittest.mock import MagicMock
 
 import numpy as np
 
-from archex.index.rerank import DEFAULT_MODEL, MAX_CONTENT_CHARS, CrossEncoderReranker
-from archex.models import CodeChunk, SymbolKind
+from archex.index.rerank import (
+    DEFAULT_MODEL,
+    DEFAULT_TOP_K,
+    MAX_CONTENT_CHARS,
+    CrossEncoderReranker,
+    is_available,
+)
+from archex.models import CodeChunk, IndexConfig, SymbolKind
 
 
 def _make_chunk(chunk_id: str, content: str = "def fn(): pass") -> CodeChunk:
@@ -30,6 +36,47 @@ def _reranker_with_mock() -> tuple[CrossEncoderReranker, MagicMock]:
     mock_model = MagicMock()
     reranker._model = mock_model  # pyright: ignore[reportPrivateUsage]
     return reranker, mock_model
+
+
+class TestIsAvailable:
+    def test_returns_bool(self) -> None:
+        result = is_available()
+        assert isinstance(result, bool)
+
+    def test_true_when_sentence_transformers_installed(self) -> None:
+        assert is_available() is True
+
+
+class TestConstants:
+    def test_default_top_k_is_30(self) -> None:
+        assert DEFAULT_TOP_K == 30
+
+    def test_max_content_chars_is_4096(self) -> None:
+        assert MAX_CONTENT_CHARS == 4096
+
+
+class TestMaybeReranker:
+    def test_auto_enables_when_available(self) -> None:
+        from archex.api import _maybe_reranker  # pyright: ignore[reportPrivateUsage]
+
+        config = IndexConfig()
+        result = _maybe_reranker(config)
+        assert isinstance(result, CrossEncoderReranker)
+
+    def test_explicit_rerank_true(self) -> None:
+        from archex.api import _maybe_reranker  # pyright: ignore[reportPrivateUsage]
+
+        config = IndexConfig(rerank=True)
+        result = _maybe_reranker(config)
+        assert isinstance(result, CrossEncoderReranker)
+
+    def test_uses_custom_model(self) -> None:
+        from archex.api import _maybe_reranker  # pyright: ignore[reportPrivateUsage]
+
+        config = IndexConfig(rerank=True, rerank_model="custom/model")
+        result = _maybe_reranker(config)
+        assert result is not None
+        assert result._model_name == "custom/model"  # pyright: ignore[reportPrivateUsage]
 
 
 class TestCrossEncoderReranker:
@@ -75,6 +122,17 @@ class TestCrossEncoderReranker:
         result = reranker.rerank("query", candidates, top_k=2)
         assert len(result) == 2
 
+    def test_rerank_default_top_k_keeps_30(self) -> None:
+        reranker, mock_model = _reranker_with_mock()
+        n = 40
+        mock_model.predict.return_value = np.arange(n, dtype=float)
+
+        chunks = [_make_chunk(f"chunk_{i}") for i in range(n)]
+        candidates = [(c, 0.0) for c in chunks]
+
+        result = reranker.rerank("query", candidates)
+        assert len(result) == DEFAULT_TOP_K
+
     def test_rerank_truncates_content(self) -> None:
         reranker, mock_model = _reranker_with_mock()
         mock_model.predict.return_value = np.array([1.0])
@@ -93,3 +151,20 @@ class TestCrossEncoderReranker:
         result = reranker.rerank("query", [(_make_chunk("a"), 1.0)])
         assert isinstance(result[0][1], float)
         assert result[0][1] == 0.75
+
+    def test_rerank_replaces_original_scores(self) -> None:
+        """Cross-encoder scores replace BM25 scores, not blend with them."""
+        reranker, mock_model = _reranker_with_mock()
+        mock_model.predict.return_value = np.array([0.1, 0.5, 0.9])
+
+        chunks = [_make_chunk("a"), _make_chunk("b"), _make_chunk("c")]
+        candidates = [(chunks[0], 10.0), (chunks[1], 5.0), (chunks[2], 1.0)]
+
+        result = reranker.rerank("query", candidates)
+
+        assert result[0][0].id == "c"
+        assert result[0][1] == 0.9
+        assert result[1][0].id == "b"
+        assert result[1][1] == 0.5
+        assert result[2][0].id == "a"
+        assert result[2][1] == 0.1
