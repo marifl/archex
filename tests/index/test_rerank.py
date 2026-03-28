@@ -87,7 +87,7 @@ class TestCrossEncoderReranker:
 
     def test_default_model_name(self) -> None:
         _ = CrossEncoderReranker()
-        assert DEFAULT_MODEL == "jinaai/jina-reranker-v2-base-multilingual"
+        assert DEFAULT_MODEL == "cross-encoder/ms-marco-MiniLM-L-6-v2"
 
     def test_custom_model_name(self) -> None:
         reranker = CrossEncoderReranker(model_name="custom/model")

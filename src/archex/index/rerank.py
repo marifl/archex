@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 DEFAULT_MODEL = "cross-encoder/ms-marco-MiniLM-L-6-v2"
 
 # Maximum content length passed to the cross-encoder per chunk.
-# Jina Reranker v2 has a 1024-token context window (~4 chars/token avg).
+# MiniLM has a 512-token context window (~4 chars/token avg).
 MAX_CONTENT_CHARS = 4096
 
 # Default number of top candidates to keep after reranking.
