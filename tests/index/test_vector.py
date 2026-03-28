@@ -9,14 +9,14 @@ import numpy as np
 import pytest
 
 from archex.exceptions import ArchexIndexError
-from archex.index.store import IndexStore
-from archex.index.vector import (
-    VectorIndex,
+from archex.index.fusion import (
     confidence_weighted_rrf,
     reciprocal_rank_fusion,
     relative_score_fusion,
     should_fuse,
 )
+from archex.index.store import IndexStore
+from archex.index.vector import VectorIndex
 from archex.models import CodeChunk, SymbolKind
 
 if TYPE_CHECKING:

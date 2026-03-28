@@ -15,16 +15,6 @@ if TYPE_CHECKING:
     from archex.index.embeddings.base import Embedder
     from archex.models import CodeChunk
 
-# Re-export fusion functions for backward compatibility.
-# Canonical implementations live in archex.index.fusion.
-from archex.index.fusion import (  # noqa: F401, E402
-    adaptive_rsf,
-    bm25_score_cv,
-    confidence_weighted_rrf,
-    reciprocal_rank_fusion,
-    relative_score_fusion,
-)
-
 
 class VectorIndex:
     """Dense vector index for semantic search over CodeChunks.
