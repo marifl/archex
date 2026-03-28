@@ -162,7 +162,8 @@ class BM25Index:
         w_content, w_symbol, w_path, w_docstring = weights
         try:
             cur = conn.execute(
-                f"SELECT chunk_id, bm25(chunks_fts, {w_content}, {w_symbol}, {w_path}, {w_docstring}) AS score "
+                "SELECT chunk_id, "
+                f"bm25(chunks_fts, {w_content}, {w_symbol}, {w_path}, {w_docstring}) AS score "
                 "FROM chunks_fts WHERE chunks_fts MATCH ? ORDER BY score LIMIT ?",
                 (escaped, top_k),
             )
