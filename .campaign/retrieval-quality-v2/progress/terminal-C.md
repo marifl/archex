@@ -44,3 +44,4 @@ Cross-encoder reranking replaces BM25 bag-of-words scores with full query-docume
 - **2026-03-29**: Fixed Jina model incompatibility — switched to ms-marco-MiniLM-L-6-v2.
 - **2026-03-29**: Made env-dependent tests conditional. All tests pass.
 - **2026-03-29**: Pushed to origin/improvement/mrr-reranking. Ready for PR.
+- **2026-03-29**: Verified full test suite: 1743 passed, 0 failed, 91.02% coverage. Cleared stale .pyc cache issue. PR created.
