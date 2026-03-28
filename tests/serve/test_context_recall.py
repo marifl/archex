@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from archex.index.graph import DependencyGraph
-from archex.models import CodeChunk, Module, SymbolKind
+from archex.models import CodeChunk, SymbolKind
 from archex.serve.context import assemble_context
 
 
@@ -134,9 +134,7 @@ def test_importer_file_included_with_higher_decay() -> None:
     core_chunk = make_chunk("c_core", "core.py", token_count=10)
     consumer_chunk = make_chunk("c_consumer", "consumer.py", token_count=10)
     results = [(core_chunk, 5.0)]
-    bundle = assemble_context(
-        results, graph, [core_chunk, consumer_chunk], "q", token_budget=1000
-    )
+    bundle = assemble_context(results, graph, [core_chunk, consumer_chunk], "q", token_budget=1000)
     included_files = {rc.chunk.file_path for rc in bundle.chunks}
     assert "consumer.py" in included_files, (
         "consumer.py (importer with 0.35 decay) must be included"
@@ -154,9 +152,7 @@ def test_importer_relevance_score_reflects_decay() -> None:
     seed_chunk = make_chunk("cs", "seed.py", token_count=10)
     imp_chunk = make_chunk("ci", "importer.py", token_count=10)
     results = [(seed_chunk, 5.0)]
-    bundle = assemble_context(
-        results, graph, [seed_chunk, imp_chunk], "q", token_budget=1000
-    )
+    bundle = assemble_context(results, graph, [seed_chunk, imp_chunk], "q", token_budget=1000)
     imp_rc = next(rc for rc in bundle.chunks if rc.chunk.file_path == "importer.py")
     # Relevance should be seed_normalized * IMPORTER_DECAY = 1.0 * 0.35
     assert abs(imp_rc.relevance_score - IMPORTER_DECAY) < 0.01
@@ -214,9 +210,7 @@ def test_express_like_three_file_retrieval() -> None:
     graph.add_file_edge("lib/router/index.js", "lib/router/route.js", kind="imports")
     graph.add_file_edge("lib/router/index.js", "lib/router/layer.js", kind="imports")
 
-    idx_chunks = [
-        make_chunk(f"ci{i}", "lib/router/index.js", token_count=10) for i in range(6)
-    ]
+    idx_chunks = [make_chunk(f"ci{i}", "lib/router/index.js", token_count=10) for i in range(6)]
     route_chunk = make_chunk("cr0", "lib/router/route.js", token_count=10)
     layer_chunk = make_chunk("cl0", "lib/router/layer.js", token_count=10)
     all_chunks = idx_chunks + [route_chunk, layer_chunk]
