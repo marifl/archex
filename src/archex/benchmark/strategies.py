@@ -1003,7 +1003,12 @@ default_strategy_registry.register(Strategy.ARCHEX_QUERY.value, run_archex_query
 default_strategy_registry.register(Strategy.ARCHEX_QUERY_VECTOR.value, run_archex_query_vector)
 default_strategy_registry.register(Strategy.SURROGATE_VECTOR.value, run_surrogate_vector)
 default_strategy_registry.register(Strategy.ARCHEX_QUERY_FUSION.value, run_archex_query_fusion)
-default_strategy_registry.register(Strategy.ARCHEX_QUERY_FUSION_RERANK.value, run_archex_query_fusion_rerank)
-default_strategy_registry.register(Strategy.ARCHEX_QUERY_FUSION_RERANK_AUGMENT.value, run_archex_query_fusion_rerank_augment)
+default_strategy_registry.register(
+    Strategy.ARCHEX_QUERY_FUSION_RERANK.value, run_archex_query_fusion_rerank
+)
+default_strategy_registry.register(
+    Strategy.ARCHEX_QUERY_FUSION_RERANK_AUGMENT.value,
+    run_archex_query_fusion_rerank_augment,
+)
 default_strategy_registry.register(Strategy.CROSS_LAYER_FUSION.value, run_cross_layer_fusion)
 default_strategy_registry.register(Strategy.ARCHEX_SYMBOL_LOOKUP.value, run_archex_symbol_lookup)
