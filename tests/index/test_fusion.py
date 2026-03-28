@@ -110,17 +110,13 @@ class TestShouldFuse:
         assert "fusion_needed" in reason
 
     def test_low_idf_forces_fusion(self) -> None:
-        fuse, reason = should_fuse(
-            self._bm25_spread(), self._vec_same_files(), avg_idf=1.5
-        )
+        fuse, reason = should_fuse(self._bm25_spread(), self._vec_same_files(), avg_idf=1.5)
         assert fuse
         assert "low_idf_force_fusion" in reason
 
     def test_high_idf_does_not_force_fusion(self) -> None:
         """High IDF doesn't force — falls through to CV/agreement check."""
-        fuse, _ = should_fuse(
-            self._bm25_spread(), self._vec_same_files(), avg_idf=3.0
-        )
+        fuse, _ = should_fuse(self._bm25_spread(), self._vec_same_files(), avg_idf=3.0)
         # High CV + high agreement → skipped
         assert not fuse
 

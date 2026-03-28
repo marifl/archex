@@ -228,7 +228,5 @@ def adaptive_rsf(
     weight scheduling. Returns (fused_results, bm25_weight, vector_weight).
     """
     bm25_weight, vector_weight = _adaptive_rsf_weights(signal_agreement, bm25_cv)
-    fused = relative_score_fusion(
-        bm25_results, vector_results, bm25_weight, vector_weight
-    )
+    fused = relative_score_fusion(bm25_results, vector_results, bm25_weight, vector_weight)
     return fused, bm25_weight, vector_weight
