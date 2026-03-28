@@ -40,3 +40,4 @@ updated: "2026-03-29T00:00:00Z"
 
 - **2026-03-29 00:00** — Started diagnosis. Reading benchmark tasks, baseline.json, and context.py to trace where expected files are lost.
 - **2026-03-29 00:30** — Root cause identified: sum-based file aggregation + aggressive adaptive_max_files cap. Implemented 6 fixes in context.py. 11 new tests in test_context_recall.py, 1751/1751 passing. Pushed commit `cd2be9c`.
+- **2026-03-29 00:45** — PR #84 created. Awaiting benchmark run to confirm recall improvement.
