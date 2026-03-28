@@ -804,9 +804,7 @@ def run_archex_query_fusion_rerank(task: BenchmarkTask, repo_path: Path) -> Benc
     )
 
 
-def run_archex_query_fusion_rerank_augment(
-    task: BenchmarkTask, repo_path: Path
-) -> BenchmarkResult:
+def run_archex_query_fusion_rerank_augment(task: BenchmarkTask, repo_path: Path) -> BenchmarkResult:
     """Fusion + rerank + query augmentation: BM25 + vector + rerank + LLM query expansion."""
     from archex.api import query
     from archex.models import Config, IndexConfig
