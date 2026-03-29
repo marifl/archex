@@ -25,6 +25,8 @@ DEFAULT_STRATEGIES: list[Strategy] = [
 AVAILABLE_STRATEGIES: list[Strategy] = [
     *DEFAULT_STRATEGIES,
     Strategy.ARCHEX_QUERY_FUSION,
+    Strategy.ARCHEX_QUERY_FUSION_RERANK,
+    Strategy.ARCHEX_QUERY_FUSION_RERANK_AUGMENT,
     Strategy.CROSS_LAYER_FUSION,
 ]
 
@@ -33,6 +35,8 @@ _VECTOR_STRATEGIES: frozenset[Strategy] = frozenset(
         Strategy.ARCHEX_QUERY_VECTOR,
         Strategy.SURROGATE_VECTOR,
         Strategy.ARCHEX_QUERY_FUSION,
+        Strategy.ARCHEX_QUERY_FUSION_RERANK,
+        Strategy.ARCHEX_QUERY_FUSION_RERANK_AUGMENT,
         Strategy.CROSS_LAYER_FUSION,
     }
 )
