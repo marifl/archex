@@ -517,11 +517,11 @@ def test_docstring_chunk_ranks_higher_than_no_docstring(
 
 
 def test_schema_migration_from_old_fts_schema(tmp_path: Path) -> None:
-    """BM25Index detects a stale FTS schema (no docstring column) and migrates it."""
+    """BM25Index detects a stale FTS schema (no breadcrumbs/summary columns) and migrates it."""
     db = tmp_path / "migration_test.db"
     store = IndexStore(db)
 
-    # Manually create the old FTS schema without the docstring column
+    # Manually create the old FTS schema without the summary column
     store.conn.execute("DROP TABLE IF EXISTS chunks_fts")
     store.conn.execute(
         """
@@ -530,6 +530,7 @@ def test_schema_migration_from_old_fts_schema(tmp_path: Path) -> None:
             content,
             symbol_name,
             file_path,
+            docstring,
             tokenize='porter unicode61'
         )
         """
@@ -539,8 +540,9 @@ def test_schema_migration_from_old_fts_schema(tmp_path: Path) -> None:
     # Instantiating BM25Index must trigger migration transparently
     idx = BM25Index(store)
 
-    # The new schema must have the docstring column — probe it
-    store.conn.execute("SELECT chunk_id FROM chunks_fts WHERE docstring MATCH 'probe' LIMIT 0")
+    # The new schema must have both breadcrumbs and summary columns — probe them
+    store.conn.execute("SELECT chunk_id FROM chunks_fts WHERE breadcrumbs MATCH 'probe' LIMIT 0")
+    store.conn.execute("SELECT chunk_id FROM chunks_fts WHERE summary MATCH 'probe' LIMIT 0")
 
     # Index must be functional after migration
     chunk = CodeChunk(
@@ -554,6 +556,7 @@ def test_schema_migration_from_old_fts_schema(tmp_path: Path) -> None:
         language="python",
         token_count=5,
         docstring="xyzzy_migrated_docstring",
+        summary="Session management factory pattern for database connections.",
     )
     store.insert_chunks([chunk])
     idx.build([chunk])
@@ -673,7 +676,7 @@ def adaptive_index(tmp_path: Path) -> Generator[tuple[IndexStore, BM25Index], No
 def test_adaptive_weights_low_idf_reduces_symbol_boost(
     adaptive_index: tuple[IndexStore, BM25Index],
 ) -> None:
-    """Low-IDF query gets reduced symbol/docstring weights and boosted path weight."""
+    """Low-IDF query gets reduced symbol/docstring/breadcrumbs/summary weights."""
     _, idx = adaptive_index
     weights = idx._adaptive_weights("task dispatch")  # pyright: ignore[reportPrivateUsage]
     # symbol weight (index 1) must be less than default 10.0
@@ -682,6 +685,10 @@ def test_adaptive_weights_low_idf_reduces_symbol_boost(
     assert weights[2] > 1.5
     # docstring weight (index 3) must be less than default 6.0
     assert weights[3] < 6.0
+    # breadcrumbs weight (index 4) must be less than default 5.0
+    assert weights[4] < 5.0
+    # summary weight (index 5) must be less than default 8.0
+    assert weights[5] < 8.0
 
 
 def test_adaptive_weights_high_idf_uses_defaults(tmp_path: Path) -> None:
@@ -722,7 +729,7 @@ def test_adaptive_weights_high_idf_uses_defaults(tmp_path: Path) -> None:
     idx.build(chunks)
     try:
         weights = idx._adaptive_weights("xyzzy_rare")  # pyright: ignore[reportPrivateUsage]
-        assert weights == (1.0, 10.0, 1.5, 6.0)
+        assert weights == (1.0, 10.0, 1.5, 6.0, 5.0, 8.0)
     finally:
         s.close()
 
@@ -801,3 +808,84 @@ def test_rerank_multiplier_fetches_more_candidates(
     assert len(results) == 1
     # The top result should be from app/task.py thanks to path bonus
     assert results[0][0].file_path == "app/task.py"
+
+
+# ---------------------------------------------------------------------------
+# Summary column tests
+# ---------------------------------------------------------------------------
+
+
+SUMMARY_CHUNKS = [
+    CodeChunk(
+        id="orm.py:ScopedSession:1",
+        content="class ScopedSession:\n    pass",
+        file_path="orm.py",
+        start_line=1,
+        end_line=2,
+        symbol_name="ScopedSession",
+        symbol_kind=SymbolKind.CLASS,
+        language="python",
+        token_count=10,
+        summary=(
+            "Session management factory pattern using scoped_session"
+            " for thread-safe database connections."
+        ),
+    ),
+    CodeChunk(
+        id="views.py:login:1",
+        content="def login(request):\n    pass",
+        file_path="views.py",
+        start_line=1,
+        end_line=2,
+        symbol_name="login",
+        symbol_kind=SymbolKind.FUNCTION,
+        language="python",
+        token_count=10,
+        summary=None,
+    ),
+]
+
+
+@pytest.fixture
+def summary_index(tmp_path: Path) -> Generator[tuple[IndexStore, BM25Index], None, None]:
+    db = tmp_path / "summary_test.db"
+    s = IndexStore(db)
+    idx = BM25Index(s)
+    s.insert_chunks(SUMMARY_CHUNKS)
+    idx.build(SUMMARY_CHUNKS)
+    yield s, idx
+    s.close()
+
+
+def test_summary_term_is_searchable(
+    summary_index: tuple[IndexStore, BM25Index],
+) -> None:
+    """Terms found only in the summary column must appear in search results."""
+    _, idx = summary_index
+    # "thread-safe" appears only in ScopedSession's summary, not in content
+    results = idx.search("thread safe database")
+    assert len(results) > 0
+    ids = [c.id for c, _ in results]
+    assert "orm.py:ScopedSession:1" in ids
+
+
+def test_summary_bridges_vocabulary_gap(
+    summary_index: tuple[IndexStore, BM25Index],
+) -> None:
+    """NL query 'session management' matches via summary even though code has no such terms."""
+    _, idx = summary_index
+    results = idx.search("session management")
+    assert len(results) > 0
+    top_chunk, _ = results[0]
+    assert top_chunk.id == "orm.py:ScopedSession:1"
+
+
+def test_chunk_without_summary_still_searchable(
+    summary_index: tuple[IndexStore, BM25Index],
+) -> None:
+    """Chunks without summaries are still searchable by content/symbol/path."""
+    _, idx = summary_index
+    results = idx.search("login")
+    assert len(results) > 0
+    ids = [c.id for c, _ in results]
+    assert "views.py:login:1" in ids
