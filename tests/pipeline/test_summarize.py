@@ -169,3 +169,37 @@ def test_summary_prompt_includes_file_path_and_symbol() -> None:
     prompt_sent: str = call_args[0][0]
     assert "src/web/routes.py" in prompt_sent
     assert "register_routes" in prompt_sent
+
+
+def test_summary_prompt_requests_search_optimization() -> None:
+    """The system prompt instructs the LLM to produce retrieval-relevant terms."""
+    # Arrange
+    provider = MagicMock()
+    provider.complete.return_value = "Session management using scoped_session factory."
+    chunk = _make_chunk()
+
+    # Act
+    summarize_chunk(chunk, provider)
+
+    # Assert — system prompt contains retrieval-oriented instructions
+    call_args = provider.complete.call_args
+    system_sent: str = call_args[1]["system"]
+    assert "search" in system_sent.lower()
+    assert "classes, functions" in system_sent.lower() or "class" in system_sent.lower()
+    assert "design pattern" in system_sent.lower() or "architectural" in system_sent.lower()
+
+
+def test_summary_prompt_asks_for_domain_terms() -> None:
+    """The user prompt asks for class/function names and domain terms."""
+    # Arrange
+    provider = MagicMock()
+    provider.complete.return_value = "Session management."
+    chunk = _make_chunk()
+
+    # Act
+    summarize_chunk(chunk, provider)
+
+    # Assert
+    call_args = provider.complete.call_args
+    prompt_sent: str = call_args[0][0]
+    assert "search-optimized" in prompt_sent.lower() or "domain" in prompt_sent.lower()

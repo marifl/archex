@@ -327,6 +327,7 @@ class CodeChunk(BaseModel):
     signature: str | None = None
     docstring: str | None = None
     breadcrumbs: str = ""
+    summary: str | None = None
 
 
 class ChunkSurrogate(BaseModel):
