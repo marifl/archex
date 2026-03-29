@@ -7,6 +7,13 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 from archex.exceptions import ArchexIndexError
+from archex.index.quantize import (
+    DEFAULT_BITS,
+    pack_codes,
+    quantize_vectors,
+    quantized_dot_product,
+    unpack_codes,
+)
 from archex.models import ChunkSurrogate, CodeChunk, VectorMode
 
 if TYPE_CHECKING:
@@ -27,12 +34,23 @@ class VectorIndex:
 
     Vectors are L2-normalized at build time so search uses dot product
     (equivalent to cosine similarity on normalized vectors).
+
+    Supports optional TurboQuant quantization for 8x+ storage reduction
+    with minimal recall degradation. When quantized, vectors are stored
+    as packed bit codes with per-vector scale parameters.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, *, quantize: bool = False, quantize_bits: int = DEFAULT_BITS) -> None:
         self._vectors: np.ndarray[tuple[int, int], np.dtype[np.float32]] | None = None
         self._chunk_ids: list[str] = []
         self._chunks_by_id: dict[str, CodeChunk] = {}
+        # Quantization state
+        self._quantize = quantize
+        self._quantize_bits = quantize_bits
+        self._quantized_codes: np.ndarray | None = None
+        self._quantized_norms: np.ndarray | None = None
+        self._quantized_scale: np.ndarray | None = None
+        self._quantized_dim: int = 0
 
     def build(
         self,
@@ -47,6 +65,10 @@ class VectorIndex:
             self._vectors = None
             self._chunk_ids = []
             self._chunks_by_id = {}
+            self._quantized_codes = None
+            self._quantized_norms = None
+            self._quantized_scale = None
+            self._quantized_dim = 0
             return
 
         texts = [
@@ -67,15 +89,35 @@ class VectorIndex:
         norms = np.maximum(norms, 1e-9)
         vectors = vectors / norms
 
-        self._vectors = vectors
         self._chunk_ids = [c.id for c in chunks]
         self._chunks_by_id = {c.id: c for c in chunks}
+
+        if self._quantize:
+            codes, q_norms, q_scale = quantize_vectors(vectors, bits=self._quantize_bits)
+            self._quantized_codes = codes
+            self._quantized_norms = q_norms
+            self._quantized_scale = q_scale
+            self._quantized_dim = vectors.shape[1]
+            self._vectors = None
+        else:
+            self._vectors = vectors
+            self._quantized_codes = None
+            self._quantized_norms = None
+            self._quantized_scale = None
+            self._quantized_dim = 0
+
+    @property
+    def is_quantized(self) -> bool:
+        """Whether the index is using quantized storage."""
+        return self._quantized_codes is not None
 
     def search(
         self, query: str, embedder: Embedder, top_k: int = 30
     ) -> list[tuple[CodeChunk, float]]:
         """Search for chunks most similar to the query string."""
-        if self._vectors is None or len(self._chunk_ids) == 0:
+        if len(self._chunk_ids) == 0:
+            return []
+        if self._vectors is None and self._quantized_codes is None:
             return []
 
         query_vec = np.array(embedder.encode([query])[0], dtype=np.float32)
@@ -84,8 +126,19 @@ class VectorIndex:
             return []
         query_vec = query_vec / norm
 
-        # Dot product on normalized vectors = cosine similarity
-        similarities = self._vectors @ query_vec
+        # Compute similarities via quantized or unquantized path
+        if self._quantized_codes is not None:
+            similarities = quantized_dot_product(
+                query_vec,
+                self._quantized_codes,
+                self._quantized_norms,  # type: ignore[arg-type]
+                self._quantized_scale,  # type: ignore[arg-type]
+                bits=self._quantize_bits,
+            )
+        else:
+            assert self._vectors is not None
+            similarities = self._vectors @ query_vec
+
         k = min(top_k, len(self._chunk_ids))
         # O(N) argpartition for top-k selection, then sort only the k selected
         if k < len(similarities):
@@ -111,6 +164,8 @@ class VectorIndex:
         """Return the vector dimension, or 0 if not built."""
         if self._vectors is not None:
             return int(self._vectors.shape[1])
+        if self._quantized_dim > 0:
+            return self._quantized_dim
         return 0
 
     def save(
@@ -123,17 +178,35 @@ class VectorIndex:
         surrogate_version: str = "v1",
     ) -> None:
         """Save vectors and chunk IDs to a compressed numpy file."""
-        if self._vectors is None:
+        if self._vectors is None and self._quantized_codes is None:
             raise ArchexIndexError("Cannot save empty vector index")
 
         path.parent.mkdir(parents=True, exist_ok=True)
-        np.savez_compressed(
-            str(path),
-            vectors=self._vectors,
-            chunk_ids=np.array(self._chunk_ids, dtype="U512"),
-            embedder_meta=np.array([embedder_name, str(vector_dim)], dtype="U256"),
-            vector_meta=np.array([str(vector_mode), surrogate_version], dtype="U256"),
-        )
+
+        common = {
+            "chunk_ids": np.array(self._chunk_ids, dtype="U512"),
+            "embedder_meta": np.array([embedder_name, str(vector_dim)], dtype="U256"),
+            "vector_meta": np.array([str(vector_mode), surrogate_version], dtype="U256"),
+        }
+
+        if self._quantized_codes is not None:
+            packed = pack_codes(self._quantized_codes, self._quantize_bits)
+            np.savez_compressed(
+                str(path),
+                **common,  # pyright: ignore[reportArgumentType]
+                quantized_packed=packed,
+                quantized_norms=self._quantized_norms,  # pyright: ignore[reportArgumentType]
+                quantized_scale=self._quantized_scale,  # pyright: ignore[reportArgumentType]
+                quantize_meta=np.array(
+                    [str(self._quantize_bits), str(self._quantized_dim)], dtype="U64"
+                ),
+            )
+        else:
+            np.savez_compressed(
+                str(path),
+                **common,  # pyright: ignore[reportArgumentType]
+                vectors=self._vectors,  # pyright: ignore[reportArgumentType]
+            )
 
     def load(
         self,
@@ -145,7 +218,11 @@ class VectorIndex:
         vector_mode: VectorMode = VectorMode.RAW,
         surrogate_version: str = "v1",
     ) -> None:
-        """Load vectors from disk and rebuild the chunk lookup map."""
+        """Load vectors from disk and rebuild the chunk lookup map.
+
+        Supports both quantized and unquantized .npz formats. Old files
+        without quantization metadata are loaded as unquantized float32.
+        """
         if not path.exists():
             suffix = ".npz"
             p = path if path.suffix == suffix else path.with_suffix(suffix)
@@ -154,13 +231,9 @@ class VectorIndex:
             path = p
 
         data = np.load(str(path), allow_pickle=False)
-        vectors = data["vectors"].astype(np.float32, copy=False)
         chunk_ids = list(data["chunk_ids"])
-        if vectors.shape[0] != len(chunk_ids):
-            raise ArchexIndexError(
-                f"Vector index corrupt: {vectors.shape[0]} vectors but {len(chunk_ids)} chunk IDs"
-            )
 
+        # Validate embedder/vector metadata (shared by both formats)
         if "embedder_meta" in data:
             stored = list(data["embedder_meta"])
             if len(stored) >= 2:
@@ -185,7 +258,37 @@ class VectorIndex:
                     f"cached={stored_version}, current={surrogate_version}"
                 )
 
-        self._vectors = vectors
+        # Load quantized or unquantized format
+        if "quantize_meta" in data:
+            meta = list(data["quantize_meta"])
+            bits = int(meta[0])
+            q_dim = int(meta[1])
+            packed = data["quantized_packed"]
+            codes = unpack_codes(packed, q_dim, bits)
+            if codes.shape[0] != len(chunk_ids):
+                raise ArchexIndexError(
+                    f"Vector index corrupt: {codes.shape[0]} vectors but {len(chunk_ids)} chunk IDs"
+                )
+            self._quantized_codes = codes
+            self._quantized_norms = data["quantized_norms"].astype(np.float32, copy=False)
+            self._quantized_scale = data["quantized_scale"].astype(np.float32, copy=False)
+            self._quantize_bits = bits
+            self._quantized_dim = q_dim
+            self._quantize = True
+            self._vectors = None
+        else:
+            vectors = data["vectors"].astype(np.float32, copy=False)
+            if vectors.shape[0] != len(chunk_ids):
+                raise ArchexIndexError(
+                    f"Vector index corrupt: {vectors.shape[0]} vectors "
+                    f"but {len(chunk_ids)} chunk IDs"
+                )
+            self._vectors = vectors
+            self._quantized_codes = None
+            self._quantized_norms = None
+            self._quantized_scale = None
+            self._quantized_dim = 0
+
         self._chunk_ids = chunk_ids
         self._chunks_by_id = {c.id: c for c in chunks}
 
