@@ -599,3 +599,205 @@ def test_avg_idf_positive_for_indexed_terms(
     _, idx = store_and_index
     idf = idx.avg_idf("calculate_sum")
     assert idf > 0.0
+
+
+# ---------------------------------------------------------------------------
+# Adaptive weights tests
+# ---------------------------------------------------------------------------
+
+
+ADAPTIVE_WEIGHT_CHUNKS = [
+    # Many chunks with "task" in symbol/docstring to simulate celery-like scenario
+    CodeChunk(
+        id="app/task.py:Task:1",
+        content="class Task:\n    def apply_async(self, args):\n        return self.dispatch(args)",
+        file_path="app/task.py",
+        start_line=1,
+        end_line=3,
+        symbol_name="Task",
+        symbol_kind=SymbolKind.CLASS,
+        language="python",
+        token_count=20,
+        docstring="Core task class for dispatching work.",
+    ),
+    CodeChunk(
+        id="__init__.py:task_export:1",
+        content="from .app.task import Task\nfrom ._state import current_task",
+        file_path="__init__.py",
+        start_line=1,
+        end_line=2,
+        symbol_name="task_export",
+        symbol_kind=SymbolKind.FUNCTION,
+        language="python",
+        token_count=15,
+        docstring="Task re-exports for convenient access. Dispatch from celery.task.",
+    ),
+    CodeChunk(
+        id="_state.py:current_task:1",
+        content="current_task = None\n_task_stack = []",
+        file_path="_state.py",
+        start_line=1,
+        end_line=2,
+        symbol_name="current_task",
+        symbol_kind=SymbolKind.VARIABLE,
+        language="python",
+        token_count=10,
+        docstring="Thread-local task state tracking for dispatch coordination.",
+    ),
+    CodeChunk(
+        id="worker/strategy.py:strategy:1",
+        content="def dispatch_strategy(task):\n    return task.execute()",
+        file_path="worker/strategy.py",
+        start_line=1,
+        end_line=2,
+        symbol_name="dispatch_strategy",
+        symbol_kind=SymbolKind.FUNCTION,
+        language="python",
+        token_count=15,
+        docstring=None,
+    ),
+]
+
+
+@pytest.fixture
+def adaptive_index(tmp_path: Path) -> Generator[tuple[IndexStore, BM25Index], None, None]:
+    db = tmp_path / "adaptive_test.db"
+    s = IndexStore(db)
+    idx = BM25Index(s)
+    s.insert_chunks(ADAPTIVE_WEIGHT_CHUNKS)
+    idx.build(ADAPTIVE_WEIGHT_CHUNKS)
+    yield s, idx
+    s.close()
+
+
+def test_adaptive_weights_low_idf_reduces_symbol_boost(
+    adaptive_index: tuple[IndexStore, BM25Index],
+) -> None:
+    """Low-IDF query gets reduced symbol/docstring weights and boosted path weight."""
+    _, idx = adaptive_index
+    weights = idx._adaptive_weights("task dispatch")  # pyright: ignore[reportPrivateUsage]
+    # symbol weight (index 1) must be less than default 10.0
+    assert weights[1] < 10.0
+    # path weight (index 2) must be more than default 1.5
+    assert weights[2] > 1.5
+    # docstring weight (index 3) must be less than default 6.0
+    assert weights[3] < 6.0
+
+
+def test_adaptive_weights_high_idf_uses_defaults(tmp_path: Path) -> None:
+    """High-IDF (specific) query returns default weights."""
+    # Need N >= 13 chunks so that a term in 1 chunk has IDF >= 2.5
+    chunks = [
+        CodeChunk(
+            id=f"mod_{i}.py:fn_{i}:{i}",
+            content=f"def fn_{i}(): return {i}",
+            file_path=f"mod_{i}.py",
+            start_line=i,
+            end_line=i + 1,
+            symbol_name=f"fn_{i}",
+            symbol_kind=SymbolKind.FUNCTION,
+            language="python",
+            token_count=10,
+        )
+        for i in range(15)
+    ]
+    # Add one chunk with a unique term
+    chunks.append(
+        CodeChunk(
+            id="unique.py:xyzzy_rare:1",
+            content="def xyzzy_rare(): return 42",
+            file_path="unique.py",
+            start_line=1,
+            end_line=1,
+            symbol_name="xyzzy_rare",
+            symbol_kind=SymbolKind.FUNCTION,
+            language="python",
+            token_count=10,
+        )
+    )
+    db = tmp_path / "high_idf.db"
+    s = IndexStore(db)
+    idx = BM25Index(s)
+    s.insert_chunks(chunks)
+    idx.build(chunks)
+    try:
+        weights = idx._adaptive_weights("xyzzy_rare")  # pyright: ignore[reportPrivateUsage]
+        assert weights == (1.0, 10.0, 1.5, 6.0)
+    finally:
+        s.close()
+
+
+def test_path_bonus_promotes_matching_file(
+    adaptive_index: tuple[IndexStore, BM25Index],
+) -> None:
+    """File with 'task' in path ranks higher after path bonus for 'task' query."""
+    _, idx = adaptive_index
+    results = idx.search("task dispatch")
+    file_paths = [c.file_path for c, _ in results]
+    assert "app/task.py" in file_paths
+    # app/task.py should rank above __init__.py and _state.py
+    task_idx = file_paths.index("app/task.py")
+    for other in ("__init__.py", "_state.py"):
+        if other in file_paths:
+            assert task_idx < file_paths.index(other), (
+                f"app/task.py (idx={task_idx}) should rank above {other}"
+            )
+
+
+def test_path_bonus_no_match_leaves_score_unchanged() -> None:
+    """Chunks with no path-matching terms get multiplier 1.0 (no change)."""
+    chunk = CodeChunk(
+        id="foo.py:bar:1",
+        content="def bar(): pass",
+        file_path="foo.py",
+        start_line=1,
+        end_line=1,
+        symbol_name="bar",
+        symbol_kind=SymbolKind.FUNCTION,
+        language="python",
+        token_count=5,
+    )
+    results = [(chunk, 5.0)]
+    boosted = BM25Index._apply_path_bonus(results, ['"unrelated"'])  # pyright: ignore[reportPrivateUsage]
+    assert boosted[0][1] == 5.0  # unchanged
+
+
+def test_path_bonus_multiple_term_matches() -> None:
+    """Multiple query terms in path compound the bonus."""
+    chunk = CodeChunk(
+        id="runtime/scheduler/mod.rs:main:1",
+        content="pub mod scheduler;",
+        file_path="runtime/scheduler/mod.rs",
+        start_line=1,
+        end_line=1,
+        symbol_name="main",
+        symbol_kind=SymbolKind.MODULE,
+        language="rust",
+        token_count=5,
+    )
+    results = [(chunk, 5.0)]
+    tokens = ['"runtime"', '"scheduler"', '"task"']
+    boosted = BM25Index._apply_path_bonus(results, tokens)  # pyright: ignore[reportPrivateUsage]
+    # "runtime" and "scheduler" match path parts; "task" does not
+    # Expected multiplier: 1.0 + 0.2 * 2 = 1.4
+    assert abs(boosted[0][1] - 7.0) < 0.01
+
+
+def test_search_respects_top_k_after_reranking(
+    adaptive_index: tuple[IndexStore, BM25Index],
+) -> None:
+    """search() returns at most top_k results even after path-bonus reranking."""
+    _, idx = adaptive_index
+    results = idx.search("task dispatch", top_k=2)
+    assert len(results) <= 2
+
+
+def test_rerank_multiplier_fetches_more_candidates(
+    adaptive_index: tuple[IndexStore, BM25Index],
+) -> None:
+    """With top_k=1, internal fetch should still consider multiple candidates."""
+    _, idx = adaptive_index
+    results = idx.search("task dispatch", top_k=1)
+    assert len(results) == 1
+    # The top result should be from app/task.py thanks to path bonus
+    assert results[0][0].file_path == "app/task.py"

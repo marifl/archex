@@ -91,6 +91,13 @@ _STOPWORDS = frozenset(
 
 _GRADUATED_THRESHOLD = 10
 
+# BM25F column weights: (content, symbol_name, file_path, docstring)
+_WEIGHTS_DEFAULT: tuple[float, float, float, float] = (1.0, 10.0, 1.5, 6.0)
+_WEIGHTS_LOW_IDF: tuple[float, float, float, float] = (1.0, 3.0, 4.0, 2.0)
+_LOW_IDF_THRESHOLD = 2.5
+_PATH_TERM_BONUS = 0.2
+_RERANK_MULTIPLIER = 2
+
 
 def _sanitize_tokens(query: str) -> list[str]:
     """Extract and sanitize query tokens, stripping FTS5 operators and stopwords."""
@@ -148,12 +155,15 @@ class BM25Index:
         self,
         escaped: str,
         top_k: int,
+        weights: tuple[float, float, float, float] = _WEIGHTS_DEFAULT,
     ) -> list[tuple[str, float]]:
         """Run a single FTS5 MATCH query, returning (chunk_id, score) pairs."""
         conn = self._store.conn
+        w_content, w_symbol, w_path, w_docstring = weights
         try:
             cur = conn.execute(
-                "SELECT chunk_id, bm25(chunks_fts, 1.0, 10.0, 1.5, 6.0) AS score "
+                "SELECT chunk_id, "
+                f"bm25(chunks_fts, {w_content}, {w_symbol}, {w_path}, {w_docstring}) AS score "
                 "FROM chunks_fts WHERE chunks_fts MATCH ? ORDER BY score LIMIT ?",
                 (escaped, top_k),
             )
@@ -166,6 +176,7 @@ class BM25Index:
         self,
         tokens: list[str],
         top_k: int,
+        weights: tuple[float, float, float, float] = _WEIGHTS_DEFAULT,
     ) -> list[tuple[str, float]]:
         """Graduated fallback: AND-all → AND-subsets → OR-all.
 
@@ -177,7 +188,7 @@ class BM25Index:
         # Stage 1: AND all terms
         if len(tokens) >= 2:
             and_query = " AND ".join(tokens)
-            rows = self._execute_fts(and_query, top_k)
+            rows = self._execute_fts(and_query, top_k, weights)
             if len(rows) >= _GRADUATED_THRESHOLD:
                 return rows
 
@@ -186,7 +197,7 @@ class BM25Index:
         if len(tokens) >= 3:
             for subset in itertools.combinations(tokens, len(tokens) - 1):
                 sub_query = " AND ".join(subset)
-                sub_rows = self._execute_fts(sub_query, top_k)
+                sub_rows = self._execute_fts(sub_query, top_k, weights)
                 for cid, score in sub_rows:
                     # Keep the best score per chunk across subsets
                     if cid not in merged or score < merged[cid]:  # FTS5 scores are negative
@@ -198,7 +209,7 @@ class BM25Index:
         if len(tokens) >= 4:
             for pair in itertools.combinations(tokens, 2):
                 pair_query = " AND ".join(pair)
-                pair_rows = self._execute_fts(pair_query, top_k)
+                pair_rows = self._execute_fts(pair_query, top_k, weights)
                 for cid, score in pair_rows:
                     if cid not in merged or score < merged[cid]:
                         merged[cid] = score
@@ -207,7 +218,7 @@ class BM25Index:
 
         # Stage 4: OR all terms
         or_query = " OR ".join(tokens)
-        or_rows = self._execute_fts(or_query, top_k)
+        or_rows = self._execute_fts(or_query, top_k, weights)
         # Merge OR results with anything we found earlier
         for cid, score in or_rows:
             if cid not in merged or score < merged[cid]:
@@ -252,6 +263,46 @@ class BM25Index:
 
         return sum(idfs) / len(idfs) if idfs else 0.0
 
+    def _adaptive_weights(self, query: str) -> tuple[float, float, float, float]:
+        """Compute BM25F column weights adapted to query term specificity.
+
+        When query terms are common in the corpus (low avg IDF), symbol_name
+        and docstring boosts amplify noise.  Shift weight toward content and
+        file_path columns instead.
+        """
+        idf = self.avg_idf(query)
+        if idf >= _LOW_IDF_THRESHOLD:
+            return _WEIGHTS_DEFAULT
+        # Linear interpolation: low-IDF weights → default weights
+        t = max(0.0, idf / _LOW_IDF_THRESHOLD)
+        return (
+            _WEIGHTS_LOW_IDF[0] + t * (_WEIGHTS_DEFAULT[0] - _WEIGHTS_LOW_IDF[0]),
+            _WEIGHTS_LOW_IDF[1] + t * (_WEIGHTS_DEFAULT[1] - _WEIGHTS_LOW_IDF[1]),
+            _WEIGHTS_LOW_IDF[2] + t * (_WEIGHTS_DEFAULT[2] - _WEIGHTS_LOW_IDF[2]),
+            _WEIGHTS_LOW_IDF[3] + t * (_WEIGHTS_DEFAULT[3] - _WEIGHTS_LOW_IDF[3]),
+        )
+
+    @staticmethod
+    def _apply_path_bonus(
+        results: list[tuple[CodeChunk, float]],
+        tokens: list[str],
+    ) -> list[tuple[CodeChunk, float]]:
+        """Boost chunks whose file path contains query terms.
+
+        Each matching term adds a multiplicative bonus, promoting files
+        whose names/directories align with the query concept
+        (e.g. celery/app/task.py for query containing "task").
+        """
+        clean = [t.strip('"').lower() for t in tokens]
+        boosted: list[tuple[CodeChunk, float]] = []
+        for chunk, score in results:
+            parts = set(re.split(r"[/\\._]", chunk.file_path.lower()))
+            matches = sum(1 for t in clean if t in parts)
+            multiplier = 1.0 + _PATH_TERM_BONUS * matches
+            boosted.append((chunk, score * multiplier))
+        boosted.sort(key=lambda x: x[1], reverse=True)
+        return boosted
+
     def search(self, query: str, top_k: int = 20) -> list[tuple[CodeChunk, float]]:
         if not query.strip():
             return []
@@ -260,7 +311,9 @@ class BM25Index:
         if not tokens:
             return []
 
-        rows = self._graduated_search(tokens, top_k)
+        weights = self._adaptive_weights(query)
+        fetch_k = top_k * _RERANK_MULTIPLIER
+        rows = self._graduated_search(tokens, fetch_k, weights)
 
         if not rows:
             return []
@@ -275,6 +328,7 @@ class BM25Index:
             score = score_map.get(chunk.id, 0.0)
             results.append((chunk, score))
 
-        # Preserve BM25 ranking order
+        # Preserve BM25 ranking order, then apply path bonus and trim
         results.sort(key=lambda r: r[1], reverse=True)
-        return results
+        results = self._apply_path_bonus(results, tokens)
+        return results[:top_k]
