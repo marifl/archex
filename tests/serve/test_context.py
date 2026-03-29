@@ -570,7 +570,7 @@ def test_fusion_weights_none_without_vector_results() -> None:
 
 
 def test_fusion_weights_reflect_high_agreement() -> None:
-    """When BM25 and vector agree completely, bm25_weight=0.85."""
+    """When BM25 and vector agree completely, adaptive RSF uses bm25_weight=0.60."""
     graph = DependencyGraph()
     for name in ("a.py", "b.py", "c.py"):
         graph.add_file_node(name)
@@ -587,8 +587,9 @@ def test_fusion_weights_reflect_high_agreement() -> None:
         vector_results=vec_results,
     )
     meta = bundle.retrieval_metadata
-    assert meta.fusion_bm25_weight == 0.85
-    assert meta.fusion_vector_weight == 0.15
+    # Adaptive RSF weights are more balanced than old RRF (was 0.85/0.15)
+    assert meta.fusion_bm25_weight == 0.60
+    assert meta.fusion_vector_weight == 0.40
 
 
 # ---------------------------------------------------------------------------

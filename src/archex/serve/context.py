@@ -362,7 +362,7 @@ def assemble_context(
     fusion_skip_reason = ""
     bm25_cv_val: float | None = None
     if vector_results:
-        from archex.index.vector import bm25_score_cv, confidence_weighted_rrf, should_fuse
+        from archex.index.fusion import adaptive_rsf, bm25_score_cv, should_fuse
 
         # Gate fusion: skip when BM25 is confident and signals agree.
         # Always fuse when BM25 is empty — vector is the only signal.
@@ -379,12 +379,15 @@ def assemble_context(
                 len(_bm25_top_k & _vec_top_k) / len(_union) if _union else 0.0
             )
 
-            merged, fusion_bm25_weight, fusion_vector_weight = confidence_weighted_rrf(
-                search_results, vector_results, signal_agreement_pre, bm25_cv_val, k=60
+            # RSF preserves score magnitude (unlike RRF which flattens to
+            # rank-based 1/(k+rank)). Adaptive weights give vector meaningful
+            # influence so unique vector hits can surface.
+            merged, fusion_bm25_weight, fusion_vector_weight = adaptive_rsf(
+                search_results, vector_results, signal_agreement_pre, bm25_cv_val
             )
             max_score = max(score for _, score in merged) or 1.0
             bm25_by_id: dict[str, float] = {chunk.id: score / max_score for chunk, score in merged}
-            logger.debug("Fusion applied: %s", fuse_reason)
+            logger.debug("Fusion applied (RSF): %s", fuse_reason)
         else:
             # BM25 is confident — skip fusion, use BM25 results only
             signal_agreement_pre = 0.0
