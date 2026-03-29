@@ -14,14 +14,22 @@ logger = logging.getLogger(__name__)
 _MAX_CONTENT_FOR_SUMMARY = 2000  # chars of code to send to the LLM
 
 _SUMMARY_SYSTEM = (
-    "You are a code documentation assistant. For each code snippet, "
-    "write a concise 1-2 sentence description of what the code does. "
-    "Use plain English. Focus on the purpose and behavior, not the implementation details. "
-    "Do not include code. Do not start with 'This function' or 'This class'."
+    "You are a code search indexing assistant. For each code snippet, "
+    "write a 1-3 sentence description that helps developers find this code "
+    "using natural language queries.\n\n"
+    "Requirements:\n"
+    "- Name the key classes, functions, and types the code defines or uses\n"
+    "- Include natural language terms a developer would search for "
+    "(e.g., 'session management', 'route registration', 'database migration')\n"
+    "- Mention the design pattern or architectural role if applicable "
+    "(e.g., 'factory', 'middleware', 'decorator', 'ORM model')\n"
+    "- Do not include code fences or raw code\n"
+    "- Do not start with 'This function' or 'This class'"
 )
 
 _SUMMARY_PROMPT = (
-    "Describe what this {language} code does in 1-2 sentences:\n\n"
+    "Write a search-optimized summary for this {language} code.\n"
+    "Include class/function names, domain terms, and what problem it solves.\n\n"
     "File: {file_path}\n"
     "Symbol: {symbol_name}\n"
     "```{language}\n{content}\n```"
@@ -49,7 +57,7 @@ def summarize_chunk(chunk: CodeChunk, provider: LLMProvider) -> str:
         summary = provider.complete(
             prompt,
             system=_SUMMARY_SYSTEM,
-            max_tokens=100,
+            max_tokens=150,
         )
         return summary.strip()
     except Exception:

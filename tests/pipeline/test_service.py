@@ -143,3 +143,89 @@ class TestMultiLanguage:
         config = Config(languages=["typescript"])
         bundle = produce_artifacts(ts_fixture, config, _adapters())
         assert len(bundle.chunks) > 0
+
+
+class TestSummarizationIntegration:
+    """produce_artifacts integrates LLM summarization when provider is given."""
+
+    def test_summaries_applied_to_chunks(self) -> None:
+        from unittest.mock import MagicMock
+
+        provider = MagicMock()
+        provider.complete.return_value = "Session management using factory pattern."
+
+        config = Config(languages=["python"])
+        bundle = produce_artifacts(
+            PYTHON_SIMPLE,
+            config,
+            _adapters(),
+            llm_provider=provider,
+        )
+        # At least some chunks should have summaries
+        summarized = [c for c in bundle.chunks if c.summary]
+        assert len(summarized) > 0
+        assert summarized[0].summary == "Session management using factory pattern."
+
+    def test_no_summaries_without_provider(self) -> None:
+        config = Config(languages=["python"])
+        bundle = produce_artifacts(PYTHON_SIMPLE, config, _adapters())
+        # Without a provider, no chunks should have summaries
+        summarized = [c for c in bundle.chunks if c.summary]
+        assert len(summarized) == 0
+
+    def test_provider_called_for_each_chunk(self) -> None:
+        from unittest.mock import MagicMock
+
+        provider = MagicMock()
+        provider.complete.return_value = "A function."
+
+        config = Config(languages=["python"])
+        bundle = produce_artifacts(
+            PYTHON_SIMPLE,
+            config,
+            _adapters(),
+            llm_provider=provider,
+        )
+        assert provider.complete.call_count == len(bundle.chunks)
+
+
+class TestSurrogateSummaryInclusion:
+    """build_chunk_surrogates includes summary in surrogate text."""
+
+    def test_surrogate_includes_summary(self) -> None:
+        from archex.models import CodeChunk, SymbolKind
+        from archex.pipeline.service import build_chunk_surrogates
+
+        chunk = CodeChunk(
+            id="orm.py:Session:1",
+            content="class Session: pass",
+            file_path="orm.py",
+            start_line=1,
+            end_line=1,
+            symbol_name="Session",
+            symbol_kind=SymbolKind.CLASS,
+            language="python",
+            token_count=10,
+            summary="Database session management with scoped_session factory.",
+        )
+        surrogates = build_chunk_surrogates([chunk])
+        assert len(surrogates) == 1
+        assert "summary: Database session management" in surrogates[0].surrogate_text
+
+    def test_surrogate_omits_summary_when_none(self) -> None:
+        from archex.models import CodeChunk, SymbolKind
+        from archex.pipeline.service import build_chunk_surrogates
+
+        chunk = CodeChunk(
+            id="util.py:helper:1",
+            content="def helper(): pass",
+            file_path="util.py",
+            start_line=1,
+            end_line=1,
+            symbol_name="helper",
+            symbol_kind=SymbolKind.FUNCTION,
+            language="python",
+            token_count=5,
+        )
+        surrogates = build_chunk_surrogates([chunk])
+        assert "summary:" not in surrogates[0].surrogate_text

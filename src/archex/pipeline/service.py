@@ -36,6 +36,7 @@ if TYPE_CHECKING:
     from archex.parse.adapters import LanguageAdapter
     from archex.pipeline.chunker import Chunker
     from archex.pipeline.models import ArtifactBundle
+    from archex.providers.base import LLMProvider
 
 
 _IDENTIFIER_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]{2,}")
@@ -138,6 +139,8 @@ def build_chunk_surrogates(
             fields.append(f"imports: {chunk.imports_context}")
         if chunk.docstring:
             fields.append(f"doc: {chunk.docstring.strip()}")
+        if chunk.summary:
+            fields.append(f"summary: {chunk.summary}")
         anchors = _surrogate_identifier_anchors(chunk.content)
         if anchors:
             fields.append(f"anchors: {' '.join(anchors)}")
@@ -196,12 +199,15 @@ def produce_artifacts(
     index_config: IndexConfig | None = None,
     *,
     strict: bool = False,
+    llm_provider: LLMProvider | None = None,
 ) -> ArtifactBundle:
-    """Run the full parse → import-resolve → chunk pipeline and return all artifacts.
+    """Run the full parse → import-resolve → chunk → summarize pipeline.
 
     This is the unified entry point for artifact production. It composes
     parse_repository() and build_chunks() into a single call that also
-    produces dependency edges and retains source bytes.
+    produces dependency edges and retains source bytes. When an LLM provider
+    is supplied, generates NL summaries for each chunk to bridge vocabulary
+    gaps between natural language queries and code identifiers.
 
     Args:
         repo_path: Root of the repository to process.
@@ -209,6 +215,7 @@ def produce_artifacts(
         adapters: Language-specific TreeSitter adapters.
         index_config: Chunking parameters (defaults to IndexConfig()).
         strict: Raise on file-read errors instead of skipping.
+        llm_provider: Optional LLM provider for chunk summarization.
 
     Returns:
         ArtifactBundle with files, parsed_files, resolved_imports, chunks,
@@ -216,6 +223,7 @@ def produce_artifacts(
     """
     from archex.models import IndexConfig as IndexConfigModel
     from archex.pipeline.models import ArtifactBundle as Bundle
+    from archex.pipeline.summarize import summarize_chunks
 
     effective_index_config = index_config or IndexConfigModel()
 
@@ -229,7 +237,14 @@ def produce_artifacts(
     chunker: Chunker = ASTChunker(config=effective_index_config)
     chunks = chunker.chunk_files(artifacts.parsed_files, sources)
 
-    # Stage 4: build dependency edges
+    # Stage 4: summarize chunks (opt-in via llm_provider)
+    if llm_provider is not None:
+        summaries = summarize_chunks(chunks, llm_provider)
+        for chunk in chunks:
+            if chunk.id in summaries:
+                chunk.summary = summaries[chunk.id]
+
+    # Stage 5: build dependency edges
     edges = _build_edges(artifacts.resolved_imports)
 
     return Bundle(

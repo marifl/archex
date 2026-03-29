@@ -21,6 +21,7 @@ CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts USING fts5(
     symbol_name,
     file_path,
     docstring,
+    summary,
     tokenize='porter unicode61'
 );
 """
@@ -29,16 +30,16 @@ _DROP_FTS_ROWS = "DELETE FROM chunks_fts;"
 
 
 def _ensure_fts_schema(conn: sqlite3.Connection) -> None:
-    """Ensure the FTS table has the current schema (including docstring column).
+    """Ensure the FTS table has the current schema (including summary column).
 
     FTS5 does not support ALTER TABLE, so we detect stale schemas
-    by checking column count and recreate if needed.
+    by probing for the latest column and recreate if needed.
     """
     try:
-        # Probe for the docstring column by attempting a dummy query
-        conn.execute("SELECT chunk_id FROM chunks_fts WHERE docstring MATCH 'probe' LIMIT 0")
+        # Probe for the summary column (latest addition) by attempting a dummy query
+        conn.execute("SELECT chunk_id FROM chunks_fts WHERE summary MATCH 'probe' LIMIT 0")
     except sqlite3.OperationalError:
-        # docstring column missing — drop and recreate with new schema
+        # summary column missing — drop and recreate with new schema
         conn.execute("DROP TABLE IF EXISTS chunks_fts")
         conn.execute(_CREATE_FTS)
         conn.commit()
@@ -91,9 +92,9 @@ _STOPWORDS = frozenset(
 
 _GRADUATED_THRESHOLD = 10
 
-# BM25F column weights: (content, symbol_name, file_path, docstring)
-_WEIGHTS_DEFAULT: tuple[float, float, float, float] = (1.0, 10.0, 1.5, 6.0)
-_WEIGHTS_LOW_IDF: tuple[float, float, float, float] = (1.0, 3.0, 4.0, 2.0)
+# BM25F column weights: (content, symbol_name, file_path, docstring, summary)
+_WEIGHTS_DEFAULT: tuple[float, float, float, float, float] = (1.0, 10.0, 1.5, 6.0, 8.0)
+_WEIGHTS_LOW_IDF: tuple[float, float, float, float, float] = (1.0, 3.0, 4.0, 2.0, 5.0)
 _LOW_IDF_THRESHOLD = 2.5
 _PATH_TERM_BONUS = 0.2
 _RERANK_MULTIPLIER = 2
@@ -136,8 +137,9 @@ class BM25Index:
         conn = self._store.conn
         conn.execute(_DROP_FTS_ROWS)
         conn.executemany(
-            "INSERT INTO chunks_fts (chunk_id, content, symbol_name, file_path, docstring) "
-            "VALUES (?, ?, ?, ?, ?)",
+            "INSERT INTO chunks_fts "
+            "(chunk_id, content, symbol_name, file_path, docstring, summary) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
             [
                 (
                     c.id,
@@ -145,6 +147,7 @@ class BM25Index:
                     c.symbol_name or "",
                     c.file_path,
                     c.docstring or "",
+                    c.summary or "",
                 )
                 for c in chunks
             ],
@@ -155,15 +158,16 @@ class BM25Index:
         self,
         escaped: str,
         top_k: int,
-        weights: tuple[float, float, float, float] = _WEIGHTS_DEFAULT,
+        weights: tuple[float, float, float, float, float] = _WEIGHTS_DEFAULT,
     ) -> list[tuple[str, float]]:
         """Run a single FTS5 MATCH query, returning (chunk_id, score) pairs."""
         conn = self._store.conn
-        w_content, w_symbol, w_path, w_docstring = weights
+        w_content, w_symbol, w_path, w_docstring, w_summary = weights
         try:
             cur = conn.execute(
                 "SELECT chunk_id, "
-                f"bm25(chunks_fts, {w_content}, {w_symbol}, {w_path}, {w_docstring}) AS score "
+                f"bm25(chunks_fts, {w_content}, {w_symbol}, {w_path}, "
+                f"{w_docstring}, {w_summary}) AS score "
                 "FROM chunks_fts WHERE chunks_fts MATCH ? ORDER BY score LIMIT ?",
                 (escaped, top_k),
             )
@@ -176,7 +180,7 @@ class BM25Index:
         self,
         tokens: list[str],
         top_k: int,
-        weights: tuple[float, float, float, float] = _WEIGHTS_DEFAULT,
+        weights: tuple[float, float, float, float, float] = _WEIGHTS_DEFAULT,
     ) -> list[tuple[str, float]]:
         """Graduated fallback: AND-all → AND-subsets → OR-all.
 
@@ -263,7 +267,7 @@ class BM25Index:
 
         return sum(idfs) / len(idfs) if idfs else 0.0
 
-    def _adaptive_weights(self, query: str) -> tuple[float, float, float, float]:
+    def _adaptive_weights(self, query: str) -> tuple[float, float, float, float, float]:
         """Compute BM25F column weights adapted to query term specificity.
 
         When query terms are common in the corpus (low avg IDF), symbol_name
@@ -275,12 +279,9 @@ class BM25Index:
             return _WEIGHTS_DEFAULT
         # Linear interpolation: low-IDF weights → default weights
         t = max(0.0, idf / _LOW_IDF_THRESHOLD)
-        return (
-            _WEIGHTS_LOW_IDF[0] + t * (_WEIGHTS_DEFAULT[0] - _WEIGHTS_LOW_IDF[0]),
-            _WEIGHTS_LOW_IDF[1] + t * (_WEIGHTS_DEFAULT[1] - _WEIGHTS_LOW_IDF[1]),
-            _WEIGHTS_LOW_IDF[2] + t * (_WEIGHTS_DEFAULT[2] - _WEIGHTS_LOW_IDF[2]),
-            _WEIGHTS_LOW_IDF[3] + t * (_WEIGHTS_DEFAULT[3] - _WEIGHTS_LOW_IDF[3]),
-        )
+        return tuple(
+            lo + t * (hi - lo) for lo, hi in zip(_WEIGHTS_LOW_IDF, _WEIGHTS_DEFAULT, strict=False)
+        )  # type: ignore[return-value]
 
     @staticmethod
     def _apply_path_bonus(
