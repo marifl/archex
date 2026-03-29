@@ -8,6 +8,8 @@ This bridges the vocabulary gap that limits BM25 on natural-language → code qu
 "session management" activates tokens like ``Session``, ``scoped_session``, ``commit``
 because the MLM head learned those co-occurrence patterns during pre-training.
 """
+# pyright: reportMissingImports=false, reportUnknownMemberType=false
+# pyright: reportUnknownVariableType=false, reportUnknownArgumentType=false
 
 from __future__ import annotations
 
