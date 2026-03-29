@@ -722,7 +722,7 @@ def test_adaptive_weights_high_idf_uses_defaults(tmp_path: Path) -> None:
     idx.build(chunks)
     try:
         weights = idx._adaptive_weights("xyzzy_rare")  # pyright: ignore[reportPrivateUsage]
-        assert weights == (1.0, 10.0, 1.5, 6.0)
+        assert weights == (1.0, 10.0, 1.5, 6.0, 5.0)
     finally:
         s.close()
 
