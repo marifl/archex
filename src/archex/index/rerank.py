@@ -13,11 +13,26 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_MODEL = "jinaai/jina-reranker-v2-base-multilingual"
+DEFAULT_MODEL = "cross-encoder/ms-marco-MiniLM-L-6-v2"
 
 # Maximum content length passed to the cross-encoder per chunk.
-# Jina Reranker v2 has a 1024-token context window.
-MAX_CONTENT_CHARS = 3072
+# MiniLM has a 512-token context window (~4 chars/token avg).
+MAX_CONTENT_CHARS = 4096
+
+# Default number of top candidates to keep after reranking.
+# Sized to cover ~8-10 files x 3-4 chunks each, giving downstream
+# scoring enough diversity without losing cross-encoder precision.
+DEFAULT_TOP_K = 30
+
+
+def is_available() -> bool:
+    """Return True if cross-encoder dependencies are installed."""
+    try:
+        import sentence_transformers as _st  # noqa: F401  # pyright: ignore[reportUnusedImport]
+
+        return True
+    except ImportError:
+        return False
 
 
 class CrossEncoderReranker:
@@ -50,14 +65,14 @@ class CrossEncoderReranker:
             file=sys.stderr,
             flush=True,
         )
-        self._model = CrossEncoder(self._model_name)
+        self._model = CrossEncoder(self._model_name, trust_remote_code=True)
         logger.info("Loaded cross-encoder reranker: %s", self._model_name)
 
     def rerank(
         self,
         query: str,
         candidates: list[tuple[CodeChunk, float]],
-        top_k: int = 20,
+        top_k: int = DEFAULT_TOP_K,
     ) -> list[tuple[CodeChunk, float]]:
         """Rerank candidates by cross-encoder relevance score.
 
