@@ -187,10 +187,10 @@ class VectorIndex:
             packed = pack_codes(self._quantized_codes, self._quantize_bits)
             np.savez_compressed(
                 str(path),
-                **common,
+                **common,  # pyright: ignore[reportArgumentType]
                 quantized_packed=packed,
-                quantized_norms=self._quantized_norms,
-                quantized_scale=self._quantized_scale,
+                quantized_norms=self._quantized_norms,  # pyright: ignore[reportArgumentType]
+                quantized_scale=self._quantized_scale,  # pyright: ignore[reportArgumentType]
                 quantize_meta=np.array(
                     [str(self._quantize_bits), str(self._quantized_dim)], dtype="U64"
                 ),
@@ -198,8 +198,8 @@ class VectorIndex:
         else:
             np.savez_compressed(
                 str(path),
-                **common,
-                vectors=self._vectors,
+                **common,  # pyright: ignore[reportArgumentType]
+                vectors=self._vectors,  # pyright: ignore[reportArgumentType]
             )
 
     def load(

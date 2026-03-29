@@ -168,8 +168,8 @@ def quantize_vectors(
 
     # Step 3: Quantize using thresholds
     # np.searchsorted gives the bin index for each value
-    flat_codes: np.ndarray = np.searchsorted(thresholds, normalized.ravel()).reshape(n, dim)
-    codes = np.clip(flat_codes, 0, n_levels - 1).astype(np.uint8)
+    flat_codes: np.ndarray = np.searchsorted(thresholds, normalized.ravel()).reshape(n, dim)  # pyright: ignore[reportUnknownVariableType,reportUnknownMemberType]
+    codes = np.clip(flat_codes, 0, n_levels - 1).astype(np.uint8)  # pyright: ignore[reportUnknownArgumentType]
 
     # Store norms and scale parameters for reconstruction
     norms = np.linalg.norm(rotated, axis=1).astype(np.float32)
