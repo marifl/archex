@@ -139,6 +139,8 @@ def build_chunk_surrogates(
             fields.append(f"imports: {chunk.imports_context}")
         if chunk.docstring:
             fields.append(f"doc: {chunk.docstring.strip()}")
+        if chunk.breadcrumbs:
+            fields.append(f"breadcrumbs: {chunk.breadcrumbs}")
         if chunk.summary:
             fields.append(f"summary: {chunk.summary}")
         anchors = _surrogate_identifier_anchors(chunk.content)

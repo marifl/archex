@@ -19,6 +19,9 @@ from archex.models import (
 
 _CAMEL_SPLIT = re.compile(r"(?<=[a-z])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])")
 _SNAKE_SPLIT = re.compile(r"_+")
+_MODULE_EXTENSIONS = frozenset(
+    {".py", ".js", ".ts", ".tsx", ".jsx", ".rb", ".java", ".kt", ".go", ".rs", ".cs", ".swift"}
+)
 
 
 def expand_identifiers(text: str) -> str:
@@ -31,6 +34,88 @@ def expand_identifiers(text: str) -> str:
             fragments.extend(_SNAKE_SPLIT.split(part))
     unique = {f.lower() for f in fragments if len(f) > 1}
     return text + "\n" + " ".join(sorted(unique)) if unique else text
+
+
+def _file_path_to_module(file_path: str) -> str:
+    """Convert a file path to a dotted module-like string.
+
+    ``src/archex/pipeline/chunker.py`` → ``archex.pipeline.chunker``
+    Strips common prefixes (``src/``, ``lib/``) and file extensions.
+    """
+    import os
+
+    path = file_path.replace("\\", "/")
+
+    for prefix in ("src/", "lib/", "app/"):
+        if path.startswith(prefix):
+            path = path[len(prefix) :]
+            break
+
+    root, ext = os.path.splitext(path)
+    if ext in _MODULE_EXTENSIONS:
+        path = root
+
+    for suffix in ("/__init__", "/index"):
+        if path.endswith(suffix):
+            path = path[: -len(suffix)]
+
+    return path.replace("/", ".")
+
+
+def build_breadcrumbs(
+    file_path: str,
+    symbol: Symbol | None,
+    all_symbols: list[Symbol] | None = None,
+) -> str:
+    """Build a compact structural breadcrumb string for a chunk.
+
+    Format: ``module: archex.pipeline.chunker > class: Greeter > method: greet``
+    For file-level chunks (no symbol): ``module: archex.pipeline.chunker``
+    """
+    parts: list[str] = []
+    module_path = _file_path_to_module(file_path)
+    parts.append(f"module: {module_path}")
+
+    if symbol is None:
+        return " > ".join(parts)
+
+    qname = symbol.qualified_name
+    if not qname:
+        parts.append(f"{symbol.kind}: {symbol.name}")
+        return " > ".join(parts)
+
+    segments = qname.split(".")
+    if len(segments) == 1:
+        parts.append(f"{symbol.kind}: {segments[0]}")
+    else:
+        parent_kinds = _resolve_parent_kinds(segments[:-1], file_path, all_symbols)
+        for seg, kind in zip(segments[:-1], parent_kinds, strict=False):
+            parts.append(f"{kind}: {seg}")
+        parts.append(f"{symbol.kind}: {segments[-1]}")
+
+    return " > ".join(parts)
+
+
+def _resolve_parent_kinds(
+    parent_segments: list[str],
+    file_path: str,
+    all_symbols: list[Symbol] | None,
+) -> list[str]:
+    """Resolve the SymbolKind for each parent segment in a qualified name chain."""
+    if not all_symbols:
+        return ["class"] * len(parent_segments)
+
+    sym_kinds: dict[str, str] = {}
+    for sym in all_symbols:
+        if sym.file_path == file_path and sym.qualified_name:
+            sym_kinds[sym.qualified_name] = str(sym.kind)
+
+    result: list[str] = []
+    for i, _seg in enumerate(parent_segments):
+        partial_qname = ".".join(parent_segments[: i + 1])
+        kind = sym_kinds.get(partial_qname, "class")
+        result.append(kind)
+    return result
 
 
 @runtime_checkable
@@ -143,6 +228,7 @@ def _build_chunk(
     symbol: Symbol | None,
     imports: list[ImportStatement],
     encoder: tiktoken.Encoding,
+    all_symbols: list[Symbol] | None = None,
 ) -> CodeChunk:
     content = _lines_to_text(lines)
 
@@ -152,6 +238,8 @@ def _build_chunk(
 
     combined = (imports_context + "\n" + content) if imports_context else content
     token_count = _count_tokens(encoder, combined)
+
+    breadcrumbs = build_breadcrumbs(file_path, symbol, all_symbols)
 
     return CodeChunk(
         id=_make_chunk_id(file_path, symbol.name if symbol else None, start_line),
@@ -173,6 +261,7 @@ def _build_chunk(
         language=language,
         imports_context=imports_context,
         token_count=token_count,
+        breadcrumbs=breadcrumbs,
     )
 
 
@@ -248,6 +337,7 @@ class ASTChunker:
                 symbol=sym,
                 imports=imports,
                 encoder=encoder,
+                all_symbols=symbols,
             )
             result.append(chunk)
 

@@ -7,13 +7,19 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 from archex.exceptions import ArchexIndexError
-from archex.models import ChunkSurrogate, VectorMode
+from archex.models import ChunkSurrogate, CodeChunk, VectorMode
 
 if TYPE_CHECKING:
     from pathlib import Path
 
     from archex.index.embeddings.base import Embedder
-    from archex.models import CodeChunk
+
+
+def _chunk_embedding_text(chunk: CodeChunk) -> str:
+    """Build the text to embed for a chunk, prepending breadcrumbs if present."""
+    if chunk.breadcrumbs:
+        return chunk.breadcrumbs + "\n" + chunk.content
+    return chunk.content
 
 
 class VectorIndex:
@@ -50,7 +56,7 @@ class VectorIndex:
                 and surrogates_by_chunk_id
                 and c.id in surrogates_by_chunk_id
             )
-            else c.content
+            else _chunk_embedding_text(c)
             for c in chunks
         ]
         raw_embeddings = embedder.encode(texts)
@@ -208,7 +214,7 @@ class VectorIndex:
                 and surrogates_by_chunk_id
                 and c.id in surrogates_by_chunk_id
             )
-            else c.content
+            else _chunk_embedding_text(c)
             for c in candidates
         ]
         encode_np = getattr(embedder, "encode_ndarray", None)

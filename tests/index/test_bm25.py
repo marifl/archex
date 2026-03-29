@@ -517,7 +517,7 @@ def test_docstring_chunk_ranks_higher_than_no_docstring(
 
 
 def test_schema_migration_from_old_fts_schema(tmp_path: Path) -> None:
-    """BM25Index detects a stale FTS schema (no summary column) and migrates it."""
+    """BM25Index detects a stale FTS schema (no breadcrumbs/summary columns) and migrates it."""
     db = tmp_path / "migration_test.db"
     store = IndexStore(db)
 
@@ -540,7 +540,8 @@ def test_schema_migration_from_old_fts_schema(tmp_path: Path) -> None:
     # Instantiating BM25Index must trigger migration transparently
     idx = BM25Index(store)
 
-    # The new schema must have the summary column — probe it
+    # The new schema must have both breadcrumbs and summary columns — probe them
+    store.conn.execute("SELECT chunk_id FROM chunks_fts WHERE breadcrumbs MATCH 'probe' LIMIT 0")
     store.conn.execute("SELECT chunk_id FROM chunks_fts WHERE summary MATCH 'probe' LIMIT 0")
 
     # Index must be functional after migration
@@ -675,7 +676,7 @@ def adaptive_index(tmp_path: Path) -> Generator[tuple[IndexStore, BM25Index], No
 def test_adaptive_weights_low_idf_reduces_symbol_boost(
     adaptive_index: tuple[IndexStore, BM25Index],
 ) -> None:
-    """Low-IDF query gets reduced symbol/docstring/summary weights and boosted path weight."""
+    """Low-IDF query gets reduced symbol/docstring/breadcrumbs/summary weights."""
     _, idx = adaptive_index
     weights = idx._adaptive_weights("task dispatch")  # pyright: ignore[reportPrivateUsage]
     # symbol weight (index 1) must be less than default 10.0
@@ -684,8 +685,10 @@ def test_adaptive_weights_low_idf_reduces_symbol_boost(
     assert weights[2] > 1.5
     # docstring weight (index 3) must be less than default 6.0
     assert weights[3] < 6.0
-    # summary weight (index 4) must be less than default 8.0
-    assert weights[4] < 8.0
+    # breadcrumbs weight (index 4) must be less than default 5.0
+    assert weights[4] < 5.0
+    # summary weight (index 5) must be less than default 8.0
+    assert weights[5] < 8.0
 
 
 def test_adaptive_weights_high_idf_uses_defaults(tmp_path: Path) -> None:
@@ -726,7 +729,7 @@ def test_adaptive_weights_high_idf_uses_defaults(tmp_path: Path) -> None:
     idx.build(chunks)
     try:
         weights = idx._adaptive_weights("xyzzy_rare")  # pyright: ignore[reportPrivateUsage]
-        assert weights == (1.0, 10.0, 1.5, 6.0, 8.0)
+        assert weights == (1.0, 10.0, 1.5, 6.0, 5.0, 8.0)
     finally:
         s.close()
 

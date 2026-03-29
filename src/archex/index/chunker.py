@@ -7,6 +7,7 @@ from archex.pipeline.chunker import (  # noqa: F401
     _format_import,
     _import_relevant,
     _merge_small_chunks,
+    build_breadcrumbs,
     expand_identifiers,
 )
 
@@ -16,5 +17,6 @@ __all__ = [
     "_format_import",
     "_import_relevant",
     "_merge_small_chunks",
+    "build_breadcrumbs",
     "expand_identifiers",
 ]
