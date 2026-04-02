@@ -9,6 +9,78 @@ if TYPE_CHECKING:
     from archex.benchmark.models import BenchmarkReport, DeltaBenchmarkResult
 
 
+_SUMMARY_FIELDS = (
+    "tokens_total",
+    "savings_vs_raw",
+    "token_efficiency",
+    "recall",
+    "f1_score",
+    "mrr",
+    "ndcg",
+    "map_score",
+)
+_BUCKET_FIELDS = (
+    "recall",
+    "precision",
+    "f1_score",
+    "mrr",
+    "ndcg",
+    "map_score",
+    "seed_recall",
+    "seed_precision",
+)
+_COMPARISON_METRICS = (
+    "recall",
+    "precision",
+    "f1_score",
+    "mrr",
+    "ndcg",
+    "map_score",
+    "token_efficiency",
+)
+_COMPARISON_LABELS = {
+    "recall": "Recall",
+    "precision": "Precision",
+    "f1_score": "F1",
+    "mrr": "MRR",
+    "ndcg": "nDCG",
+    "map_score": "MAP",
+    "token_efficiency": "Efficiency",
+}
+
+
+def _mean(values: list[float]) -> float:
+    return sum(values) / len(values)
+
+
+def _aggregate_strategy_metrics(
+    reports: list[BenchmarkReport],
+    fields: tuple[str, ...],
+) -> dict[str, dict[str, list[float]]]:
+    strategy_metrics: dict[str, dict[str, list[float]]] = defaultdict(
+        lambda: {field: [] for field in fields}
+    )
+    for report in reports:
+        for result in report.results:
+            metrics = strategy_metrics[result.strategy.value]
+            for field in fields:
+                metrics[field].append(float(getattr(result, field)))
+    return strategy_metrics
+
+
+def _strategy_win_counts(
+    reports: list[BenchmarkReport],
+    metrics: tuple[str, ...],
+) -> dict[str, dict[str, int]]:
+    wins: dict[str, dict[str, int]] = {}
+    for report in reports:
+        for metric in metrics:
+            best_result = max(report.results, key=lambda result: float(getattr(result, metric)))
+            wins.setdefault(best_result.strategy.value, {}).setdefault(metric, 0)
+            wins[best_result.strategy.value][metric] += 1
+    return wins
+
+
 def format_markdown(report: BenchmarkReport) -> str:
     """Render a single benchmark report as a markdown table."""
     lines: list[str] = []
@@ -54,27 +126,7 @@ def format_summary(reports: list[BenchmarkReport]) -> str:
     lines.append(f"**Tasks:** {len(reports)}")
     lines.append("")
 
-    # Aggregate per-strategy averages
-    strategy_totals: dict[str, list[float]] = {}
-    strategy_recalls: dict[str, list[float]] = {}
-    strategy_savings: dict[str, list[float]] = {}
-    strategy_f1s: dict[str, list[float]] = {}
-    strategy_mrrs: dict[str, list[float]] = {}
-    strategy_ndcgs: dict[str, list[float]] = {}
-    strategy_maps: dict[str, list[float]] = {}
-    strategy_efficiencies: dict[str, list[float]] = {}
-
-    for report in reports:
-        for r in report.results:
-            name = r.strategy.value
-            strategy_totals.setdefault(name, []).append(float(r.tokens_total))
-            strategy_recalls.setdefault(name, []).append(r.recall)
-            strategy_savings.setdefault(name, []).append(r.savings_vs_raw)
-            strategy_f1s.setdefault(name, []).append(r.f1_score)
-            strategy_mrrs.setdefault(name, []).append(r.mrr)
-            strategy_ndcgs.setdefault(name, []).append(r.ndcg)
-            strategy_maps.setdefault(name, []).append(r.map_score)
-            strategy_efficiencies.setdefault(name, []).append(r.token_efficiency)
+    strategy_metrics = _aggregate_strategy_metrics(reports, _SUMMARY_FIELDS)
 
     lines.append(
         "| Strategy | Avg Tokens | Avg Savings | Avg Efficiency | Avg Recall | Avg F1 "
@@ -85,28 +137,16 @@ def format_summary(reports: list[BenchmarkReport]) -> str:
         "|---------|----------|---------|-------|"
     )
 
-    for name in sorted(strategy_totals.keys()):
-        tokens_list = strategy_totals[name]
-        recalls_list = strategy_recalls[name]
-        savings_list = strategy_savings[name]
-        f1s_list = strategy_f1s[name]
-        mrrs_list = strategy_mrrs[name]
-        ndcgs_list = strategy_ndcgs[name]
-        maps_list = strategy_maps[name]
-        effs_list = strategy_efficiencies[name]
-        count = len(tokens_list)
-        avg_tokens = sum(tokens_list) / count
-        avg_recall = sum(recalls_list) / count
-        avg_savings = sum(savings_list) / count
-        avg_f1 = sum(f1s_list) / count
-        avg_mrr = sum(mrrs_list) / count
-        avg_ndcg = sum(ndcgs_list) / count
-        avg_map = sum(maps_list) / count
-        avg_eff = sum(effs_list) / count
+    for name in sorted(strategy_metrics):
+        metrics = strategy_metrics[name]
+        count = len(metrics["tokens_total"])
         lines.append(
-            f"| {name} | {avg_tokens:,.0f} | {avg_savings:.1f}% | {avg_eff:.2f} "
-            f"| {avg_recall:.2f} | {avg_f1:.2f} | {avg_mrr:.2f} "
-            f"| {avg_ndcg:.2f} | {avg_map:.2f} | {count} |"
+            f"| {name} | {_mean(metrics['tokens_total']):,.0f} "
+            f"| {_mean(metrics['savings_vs_raw']):.1f}% "
+            f"| {_mean(metrics['token_efficiency']):.2f} "
+            f"| {_mean(metrics['recall']):.2f} | {_mean(metrics['f1_score']):.2f} "
+            f"| {_mean(metrics['mrr']):.2f} | {_mean(metrics['ndcg']):.2f} "
+            f"| {_mean(metrics['map_score']):.2f} | {count} |"
         )
 
     lines.append("")
@@ -145,21 +185,7 @@ def format_bucketed_summary(reports: list[BenchmarkReport]) -> str:
         tbl.append(f"## {label} ({len(bucket_reports)} tasks)")
         tbl.append("")
 
-        strategy_metrics: dict[str, list[dict[str, float]]] = defaultdict(list)
-        for report in bucket_reports:
-            for r in report.results:
-                strategy_metrics[r.strategy.value].append(
-                    {
-                        "recall": r.recall,
-                        "precision": r.precision,
-                        "f1": r.f1_score,
-                        "mrr": r.mrr,
-                        "ndcg": r.ndcg,
-                        "map": r.map_score,
-                        "seed_recall": r.seed_recall,
-                        "seed_precision": r.seed_precision,
-                    }
-                )
+        strategy_metrics = _aggregate_strategy_metrics(bucket_reports, _BUCKET_FIELDS)
 
         tbl.append(
             "| Strategy | Recall | Precision | F1 | MRR | nDCG | MAP "
@@ -169,23 +195,16 @@ def format_bucketed_summary(reports: list[BenchmarkReport]) -> str:
             "|----------|--------|-----------|------|------|------|------"
             "|-------------|----------------|-------|"
         )
-        for name in sorted(strategy_metrics.keys()):
-            entries = strategy_metrics[name]
-            count = len(entries)
-
-            def _avg(
-                key: str,
-                _entries: list[dict[str, float]] = entries,
-                _count: int = count,
-            ) -> float:
-                return sum(e[key] for e in _entries) / _count
-
+        for name in sorted(strategy_metrics):
+            metrics = strategy_metrics[name]
+            count = len(metrics["recall"])
             tbl.append(
                 f"| {name} "
-                f"| {_avg('recall'):.2f} | {_avg('precision'):.2f} "
-                f"| {_avg('f1'):.2f} | {_avg('mrr'):.2f} "
-                f"| {_avg('ndcg'):.2f} | {_avg('map'):.2f} "
-                f"| {_avg('seed_recall'):.2f} | {_avg('seed_precision'):.2f} "
+                f"| {_mean(metrics['recall']):.2f} | {_mean(metrics['precision']):.2f} "
+                f"| {_mean(metrics['f1_score']):.2f} | {_mean(metrics['mrr']):.2f} "
+                f"| {_mean(metrics['ndcg']):.2f} | {_mean(metrics['map_score']):.2f} "
+                f"| {_mean(metrics['seed_recall']):.2f} "
+                f"| {_mean(metrics['seed_precision']):.2f} "
                 f"| {count} |"
             )
         tbl.append("")
@@ -210,17 +229,6 @@ def format_strategy_comparison(reports: list[BenchmarkReport]) -> str:
     lines.append("# Strategy Comparison")
     lines.append("")
 
-    metrics = ("recall", "precision", "f1_score", "mrr", "ndcg", "map_score", "token_efficiency")
-    metric_labels = {
-        "recall": "Recall",
-        "precision": "Precision",
-        "f1_score": "F1",
-        "mrr": "MRR",
-        "ndcg": "nDCG",
-        "map_score": "MAP",
-        "token_efficiency": "Efficiency",
-    }
-
     # Per-task tables
     for report in reports:
         lines.append(f"## {report.task_id}")
@@ -239,39 +247,27 @@ def format_strategy_comparison(reports: list[BenchmarkReport]) -> str:
         lines.append("")
 
     # Head-to-head wins
-    wins: dict[str, dict[str, int]] = {}
-    for report in reports:
-        for metric in metrics:
-            best_val = -1.0
-            best_strategy = ""
-            for r in report.results:
-                val = getattr(r, metric)
-                if val > best_val:
-                    best_val = val
-                    best_strategy = r.strategy.value
-            if best_strategy:
-                wins.setdefault(best_strategy, {}).setdefault(metric, 0)
-                wins[best_strategy][metric] += 1
+    wins = _strategy_win_counts(reports, _COMPARISON_METRICS)
 
     lines.append("## Head-to-Head Wins")
     lines.append("")
-    metric_headers = " | ".join(metric_labels[m] for m in metrics)
+    metric_headers = " | ".join(_COMPARISON_LABELS[m] for m in _COMPARISON_METRICS)
     lines.append(f"| Strategy | {metric_headers} | Total |")
-    sep = " | ".join("------" for _ in metrics)
+    sep = " | ".join("------" for _ in _COMPARISON_METRICS)
     lines.append(f"|----------|{sep}|-------|")
 
     all_strategies = sorted({r.strategy.value for report in reports for r in report.results})
     for strategy in all_strategies:
         strat_wins = wins.get(strategy, {})
-        counts = [str(strat_wins.get(m, 0)) for m in metrics]
-        total = sum(strat_wins.get(m, 0) for m in metrics)
+        counts = [str(strat_wins.get(metric, 0)) for metric in _COMPARISON_METRICS]
+        total = sum(strat_wins.get(metric, 0) for metric in _COMPARISON_METRICS)
         lines.append(f"| {strategy} | {' | '.join(counts)} | {total} |")
     lines.append("")
 
     # Best strategy per metric
     lines.append("## Best Strategy per Metric")
     lines.append("")
-    for metric in metrics:
+    for metric in _COMPARISON_METRICS:
         best_count = 0
         best_strategy = ""
         for strategy in all_strategies:
@@ -279,7 +275,7 @@ def format_strategy_comparison(reports: list[BenchmarkReport]) -> str:
             if count > best_count:
                 best_count = count
                 best_strategy = strategy
-        label = metric_labels[metric]
+        label = _COMPARISON_LABELS[metric]
         lines.append(f"- **{label}**: {best_strategy} ({best_count} wins)")
     lines.append("")
 
