@@ -87,16 +87,7 @@ def build_chunks(
 ) -> list[CodeChunk]:
     """Build code chunks from parsed files with source-bytes hydration."""
     file_chunker: Chunker = chunker if chunker is not None else ASTChunker(config=index_config)
-    sources: dict[str, bytes] = {}
-    for f in files:
-        try:
-            sources[f.path] = Path(f.absolute_path).read_bytes()
-        except OSError as err:
-            logger.warning("Failed to read file for chunking: %s", f.absolute_path)
-            if strict:
-                raise ParseError(f"Failed to read file: {f.absolute_path}") from err
-            continue
-    return file_chunker.chunk_files(parsed_files, sources)
+    return file_chunker.chunk_files(parsed_files, _read_sources(files, strict=strict))
 
 
 def _surrogate_identifier_anchors(content: str, limit: int = 8) -> list[str]:
@@ -110,6 +101,33 @@ def _surrogate_identifier_anchors(content: str, limit: int = 8) -> list[str]:
     return anchors
 
 
+def _surrogate_fields(chunk: CodeChunk) -> list[str]:
+    fields = [
+        f"path: {chunk.file_path}",
+        f"language: {chunk.language}",
+        f"lines: {chunk.start_line}-{chunk.end_line}",
+    ]
+    optional_fields = (
+        ("kind", chunk.symbol_kind),
+        ("symbol", chunk.symbol_name),
+        ("qualified", chunk.qualified_name),
+        ("signature", chunk.signature),
+        ("visibility", chunk.visibility),
+        ("imports", chunk.imports_context),
+        ("breadcrumbs", chunk.breadcrumbs),
+        ("summary", chunk.summary),
+    )
+    for label, value in optional_fields:
+        if value:
+            fields.append(f"{label}: {value}")
+    if chunk.docstring:
+        fields.append(f"doc: {chunk.docstring.strip()}")
+    anchors = _surrogate_identifier_anchors(chunk.content)
+    if anchors:
+        fields.append(f"anchors: {' '.join(anchors)}")
+    return fields
+
+
 def build_chunk_surrogates(
     chunks: list[CodeChunk],
     *,
@@ -118,43 +136,15 @@ def build_chunk_surrogates(
     """Build deterministic retrieval surrogates for semantic routing."""
     from archex.models import ChunkSurrogate
 
-    surrogates: list[ChunkSurrogate] = []
-    for chunk in chunks:
-        fields = [
-            f"path: {chunk.file_path}",
-            f"language: {chunk.language}",
-            f"lines: {chunk.start_line}-{chunk.end_line}",
-        ]
-        if chunk.symbol_kind is not None:
-            fields.append(f"kind: {chunk.symbol_kind}")
-        if chunk.symbol_name:
-            fields.append(f"symbol: {chunk.symbol_name}")
-        if chunk.qualified_name:
-            fields.append(f"qualified: {chunk.qualified_name}")
-        if chunk.signature:
-            fields.append(f"signature: {chunk.signature}")
-        if chunk.visibility:
-            fields.append(f"visibility: {chunk.visibility}")
-        if chunk.imports_context:
-            fields.append(f"imports: {chunk.imports_context}")
-        if chunk.docstring:
-            fields.append(f"doc: {chunk.docstring.strip()}")
-        if chunk.breadcrumbs:
-            fields.append(f"breadcrumbs: {chunk.breadcrumbs}")
-        if chunk.summary:
-            fields.append(f"summary: {chunk.summary}")
-        anchors = _surrogate_identifier_anchors(chunk.content)
-        if anchors:
-            fields.append(f"anchors: {' '.join(anchors)}")
-        surrogates.append(
-            ChunkSurrogate(
-                chunk_id=chunk.id,
-                file_path=chunk.file_path,
-                surrogate_text="\n".join(fields),
-                surrogate_version=version,
-            )
+    return [
+        ChunkSurrogate(
+            chunk_id=chunk.id,
+            file_path=chunk.file_path,
+            surrogate_text="\n".join(_surrogate_fields(chunk)),
+            surrogate_version=version,
         )
-    return surrogates
+        for chunk in chunks
+    ]
 
 
 def _read_sources(
