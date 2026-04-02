@@ -271,6 +271,10 @@ mcp = [
 openai = [
     { name = "openai" },
 ]
+splade = [
+    { name = "torch" },
+    { name = "transformers" },
+]
 vector = [
     { name = "onnxruntime" },
     { name = "tokenizers" },
@@ -329,6 +333,8 @@ requires-dist = [
     { name = "sentence-transformers", marker = "extra == 'vector-torch'", specifier = ">=2.6" },
     { name = "tiktoken", specifier = ">=0.7" },
     { name = "tokenizers", marker = "extra == 'vector'", specifier = ">=0.15" },
+    { name = "torch", marker = "extra == 'splade'", specifier = ">=2.0" },
+    { name = "transformers", marker = "extra == 'splade'", specifier = ">=4.30" },
     { name = "tree-sitter", specifier = ">=0.23" },
     { name = "tree-sitter-c-sharp", specifier = ">=0.23" },
     { name = "tree-sitter-go", specifier = ">=0.23" },
@@ -342,7 +348,7 @@ requires-dist = [
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.34" },
     { name = "uvicorn", extras = ["standard"], marker = "extra == 'web'", specifier = ">=0.34" },
 ]
-provides-extras = ["vector", "vector-fast", "graph", "vector-torch", "openai", "anthropic", "mcp", "langchain", "llamaindex", "lsap", "language-pack", "all", "web", "dev"]
+provides-extras = ["vector", "vector-fast", "graph", "vector-torch", "splade", "openai", "anthropic", "mcp", "langchain", "llamaindex", "lsap", "language-pack", "all", "web", "dev"]
 
 [package.metadata.requires-dev]
 dev = [
