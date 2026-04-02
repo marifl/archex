@@ -23,9 +23,54 @@ from archex.pipeline.service import build_chunk_surrogates
 if TYPE_CHECKING:
     from archex.index.graph import DependencyGraph
     from archex.index.store import IndexStore
-    from archex.models import CodeChunk, Config
+    from archex.models import CodeChunk, Config, DiscoveredFile, ImportStatement
 
 logger = logging.getLogger(__name__)
+
+
+def _parse_name_status_line(line: str) -> FileChange | None:
+    parts = line.split("\t")
+    if len(parts) < 2:
+        return None
+
+    status_code = parts[0]
+    if status_code == "M":
+        return FileChange(path=parts[1], status=ChangeStatus.MODIFIED)
+    if status_code == "A":
+        return FileChange(path=parts[1], status=ChangeStatus.ADDED)
+    if status_code == "D":
+        return FileChange(path=parts[1], status=ChangeStatus.DELETED)
+    if status_code.startswith("R") and len(parts) >= 3:
+        return FileChange(
+            path=parts[2],
+            status=ChangeStatus.RENAMED,
+            old_path=parts[1],
+        )
+    return None
+
+
+def _build_import_edges(resolved_map: dict[str, list[ImportStatement]]) -> list[Edge]:
+    return [
+        Edge(
+            source=file_path,
+            target=imp.resolved_path,
+            kind=EdgeKind.IMPORTS,
+            location=f"{file_path}:{imp.line}",
+        )
+        for file_path, imports in resolved_map.items()
+        for imp in imports
+        if imp.resolved_path is not None
+    ]
+
+
+def _changed_sources(changed_files: list[DiscoveredFile]) -> dict[str, bytes]:
+    sources: dict[str, bytes] = {}
+    for discovered_file in changed_files:
+        try:
+            sources[discovered_file.path] = Path(discovered_file.absolute_path).read_bytes()
+        except OSError:
+            continue
+    return sources
 
 
 def _is_commit_reachable(repo_path: Path, commit: str) -> bool:
@@ -87,25 +132,9 @@ def compute_delta(
     for line in result.stdout.strip().splitlines():
         if not line:
             continue
-        parts = line.split("\t")
-        if len(parts) < 2:
-            continue
-
-        status_code = parts[0]
-        if status_code == "M":
-            changes.append(FileChange(path=parts[1], status=ChangeStatus.MODIFIED))
-        elif status_code == "A":
-            changes.append(FileChange(path=parts[1], status=ChangeStatus.ADDED))
-        elif status_code == "D":
-            changes.append(FileChange(path=parts[1], status=ChangeStatus.DELETED))
-        elif status_code.startswith("R") and len(parts) >= 3:
-            changes.append(
-                FileChange(
-                    path=parts[2],
-                    status=ChangeStatus.RENAMED,
-                    old_path=parts[1],
-                )
-            )
+        change = _parse_name_status_line(line)
+        if change is not None:
+            changes.append(change)
 
     return DeltaManifest(
         base_commit=base_commit,
@@ -195,29 +224,13 @@ def apply_delta(
             resolved_map = resolve_imports(import_map, file_map, adapters, file_languages)
 
             chunker = ASTChunker(config=effective_index_config)
-            sources: dict[str, bytes] = {}
-            for f in changed_files:
-                try:
-                    sources[f.path] = Path(f.absolute_path).read_bytes()
-                except OSError:
-                    continue
-            new_chunks = chunker.chunk_files(parsed_files, sources)
+            new_chunks = chunker.chunk_files(parsed_files, _changed_sources(changed_files))
             new_surrogates = build_chunk_surrogates(
                 new_chunks,
                 version=effective_index_config.surrogate_version,
             )
 
-            new_edges = [
-                Edge(
-                    source=file_path,
-                    target=imp.resolved_path,
-                    kind=EdgeKind.IMPORTS,
-                    location=f"{file_path}:{imp.line}",
-                )
-                for file_path, imps in resolved_map.items()
-                for imp in imps
-                if imp.resolved_path is not None
-            ]
+            new_edges = _build_import_edges(resolved_map)
 
             logger.info(
                 "Re-parsed %d files: %d chunks, %d edges",
