@@ -36,6 +36,15 @@ _SUMMARY_PROMPT = (
 )
 
 
+def _build_summary_prompt(chunk: CodeChunk) -> str:
+    return _SUMMARY_PROMPT.format(
+        language=chunk.language or "code",
+        file_path=chunk.file_path,
+        symbol_name=chunk.symbol_name or "(module-level)",
+        content=chunk.content[:_MAX_CONTENT_FOR_SUMMARY],
+    )
+
+
 def summarize_chunk(chunk: CodeChunk, provider: LLMProvider) -> str:
     """Generate a concise NL summary for a single code chunk.
 
@@ -46,13 +55,7 @@ def summarize_chunk(chunk: CodeChunk, provider: LLMProvider) -> str:
     Returns:
         A 1-2 sentence NL description of the chunk's purpose.
     """
-    content = chunk.content[:_MAX_CONTENT_FOR_SUMMARY]
-    prompt = _SUMMARY_PROMPT.format(
-        language=chunk.language or "code",
-        file_path=chunk.file_path,
-        symbol_name=chunk.symbol_name or "(module-level)",
-        content=content,
-    )
+    prompt = _build_summary_prompt(chunk)
     try:
         summary = provider.complete(
             prompt,
@@ -107,14 +110,14 @@ def summarize_chunks(
         Dict mapping chunk.id to its NL summary string.
     """
     summaries: dict[str, str] = {}
-    for i, chunk in enumerate(chunks):
+    for index, chunk in enumerate(chunks, start=1):
         summary = summarize_chunk(chunk, provider)
         if summary:
             summaries[chunk.id] = summary
-        if (i + 1) % batch_size == 0:
+        if index % batch_size == 0:
             logger.info(
                 "Summarized %d/%d chunks (%d successful)",
-                i + 1,
+                index,
                 len(chunks),
                 len(summaries),
             )

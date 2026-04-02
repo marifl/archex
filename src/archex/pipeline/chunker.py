@@ -182,6 +182,10 @@ def _split_lines_at_boundary(
     return chunks
 
 
+def _is_blank_lines(lines: list[bytes]) -> bool:
+    return not lines or all(line.strip() == b"" for line in lines)
+
+
 def _extract_source_lines(all_lines: list[bytes], start_line: int, end_line: int) -> list[bytes]:
     """Extract 1-indexed [start_line, end_line] from pre-split line list."""
     lo = max(0, start_line - 1)
@@ -217,6 +221,29 @@ def _disambiguate_symbol_ids(chunks: list[CodeChunk]) -> None:
 
 def _lines_to_text(lines: list[bytes]) -> str:
     return "\n".join(line.decode("utf-8", errors="replace") for line in lines)
+
+
+def _append_candidates(
+    candidates: list[tuple[list[bytes], int, Symbol | None]],
+    *,
+    lines: list[bytes],
+    start_line: int,
+    symbol: Symbol | None,
+    max_tokens: int,
+    encoder: tiktoken.Encoding,
+) -> None:
+    if _is_blank_lines(lines):
+        return
+
+    token_count = _count_tokens(encoder, _lines_to_text(lines))
+    if token_count <= max_tokens:
+        candidates.append((lines, start_line, symbol))
+        return
+
+    offset = start_line
+    for group in _split_lines_at_boundary(lines, max_tokens, encoder):
+        candidates.append((group, offset, symbol))
+        offset += len(group)
 
 
 def _build_chunk(
@@ -290,36 +317,26 @@ class ASTChunker:
         candidates: list[tuple[list[bytes], int, Symbol | None]] = []
 
         for sym in symbols:
-            sym_lines = _extract_source_lines(all_source_lines, sym.start_line, sym.end_line)
-            if not sym_lines:
-                continue
-
-            tokens = _count_tokens(encoder, _lines_to_text(sym_lines))
-
-            if tokens > config.chunk_max_tokens:
-                sub_groups = _split_lines_at_boundary(sym_lines, config.chunk_max_tokens, encoder)
-                offset = sym.start_line
-                for group in sub_groups:
-                    candidates.append((group, offset, sym))
-                    offset += len(group)
-            else:
-                candidates.append((sym_lines, sym.start_line, sym))
+            _append_candidates(
+                candidates,
+                lines=_extract_source_lines(all_source_lines, sym.start_line, sym.end_line),
+                start_line=sym.start_line,
+                symbol=sym,
+                max_tokens=config.chunk_max_tokens,
+                encoder=encoder,
+            )
 
         # File-level code: lines not covered by any symbol
         uncovered_ranges = _find_uncovered_ranges(covered, total_lines)
         for range_start, range_end in uncovered_ranges:
-            fl_lines = _extract_source_lines(all_source_lines, range_start, range_end)
-            if not fl_lines or all(line.strip() == b"" for line in fl_lines):
-                continue
-            tokens = _count_tokens(encoder, _lines_to_text(fl_lines))
-            if tokens > config.chunk_max_tokens:
-                sub_groups = _split_lines_at_boundary(fl_lines, config.chunk_max_tokens, encoder)
-                offset = range_start
-                for group in sub_groups:
-                    candidates.append((group, offset, None))
-                    offset += len(group)
-            else:
-                candidates.append((fl_lines, range_start, None))
+            _append_candidates(
+                candidates,
+                lines=_extract_source_lines(all_source_lines, range_start, range_end),
+                start_line=range_start,
+                symbol=None,
+                max_tokens=config.chunk_max_tokens,
+                encoder=encoder,
+            )
 
         # Merge small adjacent file-level chunks
         merged = _merge_small_chunks(candidates, config.chunk_min_tokens, encoder)
@@ -327,7 +344,7 @@ class ASTChunker:
         # Build CodeChunk objects
         result: list[CodeChunk] = []
         for lines_group, start_line, sym in merged:
-            if not lines_group or all(line.strip() == b"" for line in lines_group):
+            if _is_blank_lines(lines_group):
                 continue
             chunk = _build_chunk(
                 file_path=file_path,

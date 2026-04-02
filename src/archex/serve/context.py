@@ -74,6 +74,24 @@ def estimate_tokens(chunk: CodeChunk) -> int:
     return int(len(chunk.content.split()) * 1.3)
 
 
+def _is_test_file(file_path: str) -> bool:
+    return file_path.startswith("test") or "/test" in file_path
+
+
+def _type_definitions(chunks: list[RankedChunk]) -> list[TypeDefinition]:
+    return [
+        TypeDefinition(
+            symbol=ranked.chunk.symbol_name or ranked.chunk.id,
+            file_path=ranked.chunk.file_path,
+            start_line=ranked.chunk.start_line,
+            end_line=ranked.chunk.end_line,
+            content=ranked.chunk.content,
+        )
+        for ranked in chunks
+        if ranked.chunk.symbol_kind in _TYPE_LIKE
+    ]
+
+
 def passthrough_context(
     all_chunks: list[CodeChunk],
     question: str,
@@ -92,18 +110,7 @@ def passthrough_context(
     file_tree = "\n".join(included_files)
     structural_context = StructuralContext(file_tree=file_tree)
 
-    type_defs: list[TypeDefinition] = []
-    for rc in included:
-        if rc.chunk.symbol_kind in _TYPE_LIKE:
-            type_defs.append(
-                TypeDefinition(
-                    symbol=rc.chunk.symbol_name or rc.chunk.id,
-                    file_path=rc.chunk.file_path,
-                    start_line=rc.chunk.start_line,
-                    end_line=rc.chunk.end_line,
-                    content=rc.chunk.content,
-                )
-            )
+    type_defs = _type_definitions(included)
 
     assembly_ms = (time.perf_counter() - assembly_start) * 1000
 
@@ -312,6 +319,99 @@ def _directory_alignment_boost(file_path: str, query_terms: set[str]) -> float:
     return 1.0
 
 
+def _normalized_scores(results: list[tuple[CodeChunk, float]]) -> dict[str, float]:
+    max_score = max((score for _, score in results), default=1.0) or 1.0
+    return {chunk.id: score / max_score for chunk, score in results}
+
+
+def _seed_file_scores(
+    search_results: list[tuple[CodeChunk, float]],
+    vector_results: list[tuple[CodeChunk, float]] | None,
+) -> dict[str, float]:
+    scores: dict[str, float] = {}
+    for chunk, score in search_results:
+        effective = score * (0.6 if _is_test_file(chunk.file_path) else 1.0)
+        scores[chunk.file_path] = max(scores.get(chunk.file_path, 0.0), effective)
+    if vector_results:
+        for chunk, score in vector_results:
+            if chunk.file_path in scores:
+                continue
+            effective = score * (0.6 if _is_test_file(chunk.file_path) else 1.0)
+            scores[chunk.file_path] = effective
+    return scores
+
+
+def _chunks_by_file(all_chunks: list[CodeChunk]) -> dict[str, list[CodeChunk]]:
+    chunks_by_path: dict[str, list[CodeChunk]] = {}
+    for chunk in all_chunks:
+        chunks_by_path.setdefault(chunk.file_path, []).append(chunk)
+    return chunks_by_path
+
+
+def _add_file_chunks(
+    candidate_map: dict[str, CodeChunk],
+    chunks_by_file: dict[str, list[CodeChunk]],
+    file_path: str,
+    *,
+    max_per_file: int,
+) -> int:
+    added = 0
+    for chunk in chunks_by_file.get(file_path, []):
+        if chunk.id in candidate_map:
+            continue
+        candidate_map[chunk.id] = chunk
+        added += 1
+        if added >= max_per_file:
+            break
+    return added
+
+
+def _dependency_subgraph(
+    graph: DependencyGraph,
+    included_files: list[str],
+) -> dict[str, list[str]]:
+    included_file_set = set(included_files)
+    subgraph: dict[str, list[str]] = {}
+    for edge in graph.file_edges():
+        if edge.source in included_file_set and edge.target in included_file_set:
+            subgraph.setdefault(edge.source, []).append(edge.target)
+    return subgraph
+
+
+def _neighbor_boosts(
+    graph: DependencyGraph,
+    seed_files: set[str],
+    candidate_map: dict[str, CodeChunk],
+    norm_seed_scores: dict[str, float],
+    effective_expansion_min: float,
+    bm25_by_id: dict[str, float],
+    query_terms: set[str],
+) -> dict[str, float]:
+    boosts: dict[str, float] = {}
+    for file_path in seed_files:
+        if norm_seed_scores.get(file_path, 0.0) < effective_expansion_min:
+            continue
+        seed_score = max(
+            (
+                bm25_by_id.get(chunk.id, 0.0)
+                for chunk in candidate_map.values()
+                if chunk.file_path == file_path
+            ),
+            default=0.0,
+        )
+        for dep in graph.imports_of(file_path):
+            if dep in seed_files:
+                continue
+            path_match = any(term in dep.lower() for term in query_terms)
+            decay = IMPORT_TARGET_DECAY * (1.3 if path_match else 1.0)
+            boosts[dep] = max(boosts.get(dep, 0.0), seed_score * decay)
+        for importer in graph.imported_by(file_path):
+            if importer in seed_files:
+                continue
+            boosts[importer] = max(boosts.get(importer, 0.0), seed_score * IMPORTER_DECAY)
+    return boosts
+
+
 def assemble_context(
     search_results: list[tuple[CodeChunk, float]],
     graph: DependencyGraph,
@@ -385,8 +485,7 @@ def assemble_context(
             merged, fusion_bm25_weight, fusion_vector_weight = adaptive_rsf(
                 search_results, vector_results, signal_agreement_pre, bm25_cv_val
             )
-            max_score = max(score for _, score in merged) or 1.0
-            bm25_by_id: dict[str, float] = {chunk.id: score / max_score for chunk, score in merged}
+            bm25_by_id = _normalized_scores(merged)
             logger.debug("Fusion applied (RSF): %s", fuse_reason)
         else:
             # BM25 is confident — skip fusion, use BM25 results only
@@ -394,14 +493,11 @@ def assemble_context(
             fusion_skipped = True
             fusion_skip_reason = fuse_reason
             strategy = "bm25+graph"  # downgrade strategy label
-            max_score = max((score for _, score in search_results), default=1.0) or 1.0
-            bm25_by_id = {chunk.id: score / max_score for chunk, score in search_results}
+            bm25_by_id = _normalized_scores(search_results)
             logger.debug("Fusion skipped: %s", fuse_reason)
     else:
         signal_agreement_pre = 0.0
-        # Normalize BM25 scores to [0, 1]
-        max_score = max(score for _, score in search_results) or 1.0
-        bm25_by_id = {chunk.id: score / max_score for chunk, score in search_results}
+        bm25_by_id = _normalized_scores(search_results)
     # When fusion is skipped, exclude vector results from seeds to avoid noise
     effective_vector = vector_results if (vector_results and not fusion_skipped) else []
     all_results = search_results + effective_vector
@@ -420,20 +516,7 @@ def assemble_context(
     # Expand: follow directed imports from seed files, prioritized by seed score.
     # imports_of(file) = files this file depends on (high relevance — same call chain)
     # imported_by(file) = files that depend on this file (moderate relevance — consumers)
-    seed_file_scores: dict[str, float] = {}
-    for chunk, score in search_results:
-        fp = chunk.file_path
-        is_test = fp.startswith("test") or "/test" in fp
-        effective = score * (0.6 if is_test else 1.0)
-        seed_file_scores[fp] = max(seed_file_scores.get(fp, 0.0), effective)
-    # Include vector-only seeds so they can gate expansion independently of BM25.
-    if vector_results:
-        for chunk, score in vector_results:
-            fp = chunk.file_path
-            if fp not in seed_file_scores:
-                is_test = fp.startswith("test") or "/test" in fp
-                effective = score * (0.6 if is_test else 1.0)
-                seed_file_scores[fp] = effective
+    seed_file_scores = _seed_file_scores(search_results, vector_results)
 
     # Normalize seed file scores to [0, 1] for expansion gating
     max_seed_score = max(seed_file_scores.values()) if seed_file_scores else 1.0
@@ -514,9 +597,7 @@ def assemble_context(
     )
 
     # Build chunk lookup by file
-    chunks_by_file: dict[str, list[CodeChunk]] = {}
-    for chunk in all_chunks:
-        chunks_by_file.setdefault(chunk.file_path, []).append(chunk)
+    chunks_by_file = _chunks_by_file(all_chunks)
 
     # Collect candidate chunks (seed + file-capped expansion), dedup by id
     # Cap per-file to prevent one large file from monopolizing the expansion budget.
@@ -534,15 +615,14 @@ def assemble_context(
     expansion_files_added = 0
     hop1_files_added: list[str] = []
     for file_path in sorted_expansion:
-        if file_path.startswith("test") or "/test" in file_path:
+        if _is_test_file(file_path):
             continue
-        added = 0
-        for chunk in chunks_by_file.get(file_path, []):
-            if chunk.id not in candidate_map:
-                candidate_map[chunk.id] = chunk
-                added += 1
-                if added >= max_per_file:
-                    break
+        added = _add_file_chunks(
+            candidate_map,
+            chunks_by_file,
+            file_path,
+            max_per_file=max_per_file,
+        )
         if added > 0:
             expansion_files_added += 1
             hop1_files_added.append(file_path)
@@ -566,17 +646,16 @@ def assemble_context(
             sorted_hop2 = sorted(hop2_priority.keys(), key=lambda f: -hop2_priority[f])
             hop2_added = 0
             for file_path in sorted_hop2:
-                if file_path.startswith("test") or "/test" in file_path:
+                if _is_test_file(file_path):
                     continue
                 if hop2_added >= remaining_budget:
                     break
-                added = 0
-                for chunk in chunks_by_file.get(file_path, []):
-                    if chunk.id not in candidate_map:
-                        candidate_map[chunk.id] = chunk
-                        added += 1
-                        if added >= max_per_file:
-                            break
+                added = _add_file_chunks(
+                    candidate_map,
+                    chunks_by_file,
+                    file_path,
+                    max_per_file=max_per_file,
+                )
                 if added > 0:
                     hop2_added += 1
                     expansion_files_added += 1
@@ -642,31 +721,15 @@ def assemble_context(
 
     # Propagate BM25 relevance to import-expanded neighbors (directed).
     # Only propagate from seeds above the expansion confidence threshold.
-    neighbor_boost: dict[str, float] = {}
-    for file_path in seed_files:
-        if norm_seed_scores.get(file_path, 0.0) < effective_expansion_min:
-            continue
-        seed_score = max(
-            (bm25_by_id.get(c.id, 0.0) for c in candidate_map.values() if c.file_path == file_path),
-            default=0.0,
-        )
-        # Direct imports get strong boost — same call chain
-        for dep in graph.imports_of(file_path):
-            if dep not in seed_files:
-                path_lower = dep.lower()
-                path_match = any(t in path_lower for t in q_terms)
-                decay = IMPORT_TARGET_DECAY * (1.3 if path_match else 1.0)
-                neighbor_boost[dep] = max(
-                    neighbor_boost.get(dep, 0.0),
-                    seed_score * decay,
-                )
-        # Importers get weaker boost — consumers, not dependencies
-        for imp in graph.imported_by(file_path):
-            if imp not in seed_files:
-                neighbor_boost[imp] = max(
-                    neighbor_boost.get(imp, 0.0),
-                    seed_score * IMPORTER_DECAY,
-                )
+    neighbor_boost = _neighbor_boosts(
+        graph,
+        seed_files,
+        candidate_map,
+        norm_seed_scores,
+        effective_expansion_min,
+        bm25_by_id,
+        q_terms,
+    )
 
     # Build RankedChunks
     ranked: list[RankedChunk] = []
@@ -683,7 +746,7 @@ def assemble_context(
             cohesion = (co_present / len(mod.files)) * mod.cohesion_score
 
         # Test files mirror implementation vocabulary — strong penalty
-        is_test = chunk.file_path.startswith("test") or "/test" in chunk.file_path
+        is_test = _is_test_file(chunk.file_path)
         test_penalty = 0.3 if is_test else 1.0
 
         # Entry-point files (mod.rs, __init__.py, index.js) define module interfaces
@@ -771,31 +834,12 @@ def assemble_context(
     included_files = sorted({rc.chunk.file_path for rc in included})
     file_tree = "\n".join(included_files)
 
-    all_file_edges = graph.file_edges()
-    included_file_set = set(included_files)
-    dep_subgraph: dict[str, list[str]] = {}
-    for edge in all_file_edges:
-        if edge.source in included_file_set and edge.target in included_file_set:
-            dep_subgraph.setdefault(edge.source, []).append(edge.target)
-
     structural_context = StructuralContext(
         file_tree=file_tree,
-        file_dependency_subgraph=dep_subgraph,
+        file_dependency_subgraph=_dependency_subgraph(graph, included_files),
     )
 
-    # Collect TypeDefinitions from included chunks
-    type_defs: list[TypeDefinition] = []
-    for rc in included:
-        if rc.chunk.symbol_kind in _TYPE_LIKE:
-            type_defs.append(
-                TypeDefinition(
-                    symbol=rc.chunk.symbol_name or rc.chunk.id,
-                    file_path=rc.chunk.file_path,
-                    start_line=rc.chunk.start_line,
-                    end_line=rc.chunk.end_line,
-                    content=rc.chunk.content,
-                )
-            )
+    type_defs = _type_definitions(included)
 
     if trace is not None:
         trace.add_step(
