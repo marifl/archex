@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from concurrent.futures import ProcessPoolExecutor
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from archex.exceptions import ParseError
@@ -19,6 +20,51 @@ if TYPE_CHECKING:
     from archex.parse.engine import TreeSitterEngine
 
 
+def _count_lines(source: bytes) -> int:
+    return source.count(b"\n") + (1 if source and not source.endswith(b"\n") else 0)
+
+
+def _parse_with_adapter(
+    *,
+    absolute_path: str,
+    relative_path: str,
+    language: str,
+    engine: TreeSitterEngine,
+    adapter: LanguageAdapter,
+) -> ParsedFile:
+    tree = engine.parse_file(absolute_path, language)
+    source = Path(absolute_path).read_bytes()
+    symbols = adapter.extract_symbols(tree, source, relative_path)
+    return ParsedFile(
+        path=relative_path,
+        language=language,
+        symbols=symbols,
+        lines=_count_lines(source),
+    )
+
+
+def _extract_symbols_sequential(
+    files: list[DiscoveredFile],
+    engine: TreeSitterEngine,
+    adapters: Mapping[str, LanguageAdapter],
+) -> list[ParsedFile]:
+    results: list[ParsedFile] = []
+    for discovered_file in files:
+        adapter = adapters.get(discovered_file.language)
+        if adapter is None:
+            continue
+        results.append(
+            _parse_with_adapter(
+                absolute_path=str(discovered_file.absolute_path),
+                relative_path=discovered_file.path,
+                language=discovered_file.language,
+                engine=engine,
+                adapter=adapter,
+            )
+        )
+    return results
+
+
 def _parse_file_worker(absolute_path: str, relative_path: str, language: str) -> ParsedFile | None:
     """Worker function for parallel parsing — creates its own engine and adapter."""
     from archex.parse.adapters import ADAPTERS
@@ -29,20 +75,12 @@ def _parse_file_worker(absolute_path: str, relative_path: str, language: str) ->
     if adapter_class is None:
         return None
 
-    adapter = adapter_class()
-    tree = engine.parse_file(absolute_path, language)
-
-    with open(absolute_path, "rb") as fh:
-        source = fh.read()
-
-    symbols = adapter.extract_symbols(tree, source, relative_path)
-    line_count = source.count(b"\n") + (1 if source and not source.endswith(b"\n") else 0)
-
-    return ParsedFile(
-        path=relative_path,
+    return _parse_with_adapter(
+        absolute_path=absolute_path,
+        relative_path=relative_path,
         language=language,
-        symbols=symbols,
-        lines=line_count,
+        engine=engine,
+        adapter=adapter_class(),
     )
 
 
@@ -92,28 +130,4 @@ def extract_symbols(
                 raise ParseError(f"Parallel parsing failed: {e}") from e
             logger.error("Parallel executor failed, falling back to sequential: %s", e)
 
-    results_seq: list[ParsedFile] = []
-
-    for f in eligible:
-        adapter = adapters.get(f.language)
-        if adapter is None:
-            continue
-
-        tree = engine.parse_file(f.absolute_path, f.language)
-
-        with open(f.absolute_path, "rb") as fh:
-            source = fh.read()
-
-        symbols = adapter.extract_symbols(tree, source, f.path)
-        line_count = source.count(b"\n") + (1 if source and not source.endswith(b"\n") else 0)
-
-        results_seq.append(
-            ParsedFile(
-                path=f.path,
-                language=f.language,
-                symbols=symbols,
-                lines=line_count,
-            )
-        )
-
-    return results_seq
+    return _extract_symbols_sequential(eligible, engine, adapters)

@@ -31,6 +31,29 @@ _PARAM_RE = re.compile(
 )
 
 
+def _split_parameter_parts(raw_params: str) -> list[str]:
+    parts: list[str] = []
+    depth = 0
+    current: list[str] = []
+    for char in raw_params:
+        if char in "([{":
+            depth += 1
+            current.append(char)
+            continue
+        if char in ")]}":
+            depth -= 1
+            current.append(char)
+            continue
+        if char == "," and depth == 0:
+            parts.append("".join(current).strip())
+            current = []
+            continue
+        current.append(char)
+    if current:
+        parts.append("".join(current).strip())
+    return parts
+
+
 def _parse_parameters(sig: str) -> list[Parameter]:
     """Extract parameters from a function signature string like 'def foo(a: int, b=1)'."""
     # Extract the params substring between the first ( and matching )
@@ -44,26 +67,7 @@ def _parse_parameters(sig: str) -> list[Parameter]:
         return []
 
     params: list[Parameter] = []
-    # Split on commas — careful with nested brackets (generics)
-    depth = 0
-    current: list[str] = []
-    parts: list[str] = []
-    for char in raw_params:
-        if char in "([{":
-            depth += 1
-            current.append(char)
-        elif char in ")]}":
-            depth -= 1
-            current.append(char)
-        elif char == "," and depth == 0:
-            parts.append("".join(current).strip())
-            current = []
-        else:
-            current.append(char)
-    if current:
-        parts.append("".join(current).strip())
-
-    for part in parts:
+    for part in _split_parameter_parts(raw_params):
         part = part.strip()
         if not part or part in ("*", "/", "**kwargs", "*args"):
             continue
@@ -117,12 +121,9 @@ def _build_used_by(graph: DependencyGraph) -> dict[str, list[str]]:
     """Map each file path to the list of files that import it."""
     used_by: dict[str, list[str]] = {}
     for edge in graph.file_edges():
-        target = edge.target
-        source = edge.source
-        if target not in used_by:
-            used_by[target] = []
-        if source not in used_by[target]:
-            used_by[target].append(source)
+        importers = used_by.setdefault(edge.target, [])
+        if edge.source not in importers:
+            importers.append(edge.source)
     return used_by
 
 
@@ -131,6 +132,14 @@ def _build_used_by(graph: DependencyGraph) -> dict[str, list[str]]:
 # ---------------------------------------------------------------------------
 
 _TOP_LEVEL_KINDS = {SymbolKind.FUNCTION, SymbolKind.CLASS, SymbolKind.INTERFACE}
+
+
+def _is_public_top_level_symbol(symbol_name: str, parent: str | None) -> bool:
+    if parent is not None:
+        return False
+    if not symbol_name.startswith("_"):
+        return True
+    return symbol_name.startswith("__") and symbol_name.endswith("__")
 
 
 def extract_interfaces(
@@ -154,13 +163,7 @@ def extract_interfaces(
                 continue
             if sym.kind not in _TOP_LEVEL_KINDS:
                 continue
-            # Exclude methods (they have a parent class)
-            if sym.parent is not None:
-                continue
-            # Exclude private names (redundant but explicit)
-            if sym.name.startswith("_") and not (
-                sym.name.startswith("__") and sym.name.endswith("__")
-            ):
+            if not _is_public_top_level_symbol(sym.name, sym.parent):
                 continue
 
             ref = SymbolRef(
