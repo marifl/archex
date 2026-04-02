@@ -23,6 +23,10 @@ _EXPANSION_PROMPT = (
 )
 
 
+def _sanitize_expansion_tokens(expansion: str) -> list[str]:
+    return re.findall(r"[a-zA-Z_][a-zA-Z0-9_.]*", expansion)
+
+
 def augment_query(question: str, provider: LLMProvider | None) -> str:
     """Expand a natural language query with code-vocabulary identifiers.
 
@@ -54,7 +58,7 @@ def augment_query(question: str, provider: LLMProvider | None) -> str:
         return question
 
     # Sanitize: keep only valid identifier-like tokens
-    tokens = re.findall(r"[a-zA-Z_][a-zA-Z0-9_.]*", expansion)
+    tokens = _sanitize_expansion_tokens(expansion)
     if not tokens:
         return question
 
